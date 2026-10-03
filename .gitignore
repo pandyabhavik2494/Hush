@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode — per-user state and build output
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Local safety copies made while working on the app (not source)
+*.tgz
+*.bak
+*.bak-*
+
+# Scratch output from Claude sessions (test screenshots, old experiments)
+Claude outputs/
+_to_delete/
