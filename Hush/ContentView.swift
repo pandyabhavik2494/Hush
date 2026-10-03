@@ -297,7 +297,11 @@ private struct UnderHeaderBlur: ViewModifier {
     static let maxDim: Double = 0.12
 
     func body(content: Content) -> some View {
+        // Plain copies for the effect closure: it runs on the render thread, so it may only use
+        // values captured here, not properties of this (main-thread) view.
         let bottom = headerBottom
+        let maxRadius = Self.maxRadius
+        let maxDim = Self.maxDim
         content.visualEffect { effect, proxy in
             let frame = proxy.frame(in: .global)
             // Share of the item that has passed above the header's bottom edge (0…1).
@@ -307,8 +311,8 @@ private struct UnderHeaderBlur: ViewModifier {
             // while part of the item still shows below them.
             let strength = depth * depth
             return effect
-                .blur(radius: strength * Self.maxRadius)
-                .opacity(1 - Double(strength) * Self.maxDim)
+                .blur(radius: strength * maxRadius)
+                .opacity(1 - Double(strength) * maxDim)
         }
     }
 }
