@@ -141,7 +141,6 @@ final class Player {
         pendingPlayState = (playing, Date().addingTimeInterval(0.8))
         if playing {
             VideoPlayback.shared.pauseForMusic()
-            YouTubePlayback.shared.pauseForMusic()
             if avPlayer.currentItem == nil {
                 startEntry(at: currentIndex, autoplay: true, at: currentTime)
                 return
@@ -345,7 +344,6 @@ final class Player {
         pendingPlayState = (autoplay, Date().addingTimeInterval(0.8))
         if autoplay {
             VideoPlayback.shared.pauseForMusic()
-            YouTubePlayback.shared.pauseForMusic()
             avPlayer.play()
         } else {
             avPlayer.pause()
@@ -472,7 +470,6 @@ final class Player {
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                if YouTubePlayback.shared.isShowing { YouTubePlayback.shared.togglePlayPause(); return }
                 if VideoPlayback.shared.handlesMediaKeys { VideoPlayback.shared.togglePlayPause(); return }
                 self?.togglePlayPause()
             }
@@ -480,7 +477,6 @@ final class Player {
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                if YouTubePlayback.shared.isShowing { YouTubePlayback.shared.playNext(); return }
                 if VideoPlayback.shared.handlesMediaKeys { VideoPlayback.shared.next(); return }
                 self?.next()
             }

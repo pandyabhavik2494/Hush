@@ -9,7 +9,6 @@ struct ContentView: View {
     @Environment(Player.self) private var player
     @Environment(Navigator.self) private var navigator
     @Environment(VideoPlayback.self) private var video
-    @Environment(YouTubePlayback.self) private var youtube
 
     var body: some View {
         ZStack {
@@ -45,12 +44,6 @@ struct ContentView: View {
                     .transition(.opacity)
                     .zIndex(2)
             }
-
-            if youtube.isShowing {
-                YouTubePlayerView()
-                    .transition(.opacity)
-                    .zIndex(3)
-            }
         }
         .overlay(alignment: .bottom) {
             ToastView()
@@ -62,7 +55,6 @@ struct ContentView: View {
         .animation(.smooth(duration: 0.35), value: navigator.showsNowPlaying)
         .animation(.smooth(duration: 0.3), value: navigator.showsUpNext)
         .animation(.easeInOut(duration: 0.25), value: video.isShowing)
-        .animation(.easeInOut(duration: 0.25), value: youtube.isShowing)
         .animation(.spring(response: 0.4, dampingFraction: 0.86), value: player.current == nil)
         .task { library.loadIfNeeded() }
         .onChange(of: library.revision) {
@@ -106,7 +98,7 @@ struct MainArea: View {
             ArtworkGlow(id: library.playlist(id: id)?.mosaicTrackIDs.first, height: 640, strength: 0.5)
         case .artist(let id):
             ArtworkGlow(id: library.artist(id: id)?.albums.first?.artworkTrackID, height: 560, strength: 0.45)
-        case .youtubePlaylist, nil:
+        case nil:
             HushAmbientLight()
                 .frame(height: 520)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -125,7 +117,6 @@ struct MainArea: View {
             case .album(let id): AlbumPage(albumID: id).id(id)
             case .artist(let id): ArtistPage(artistID: id).id(id)
             case .playlist(let id): PlaylistPage(playlistID: id).id(id)
-            case .youtubePlaylist(let id): YouTubePlaylistPage(playlistID: id).id(id)
             case nil:
                 switch navigator.section {
                 case .albums: AlbumsGrid()
@@ -134,7 +125,6 @@ struct MainArea: View {
                 case .artists: ArtistsGrid()
                 case .musicVideos: MusicVideosGrid()
                 case .movies: MoviesGrid()
-                case .youtube: YouTubeSection()
                 }
             }
         }
@@ -179,9 +169,6 @@ struct LibraryToolbar: View {
                 if !section.sortOptions.isEmpty {
                     sortMenu(for: section)
                 }
-                if section == .youtube, YouTubeAccount.shared.isConnected {
-                    YouTubeAccountMenu()
-                }
             }
         }
         .padding(.leading, 20)
@@ -224,7 +211,6 @@ struct LibraryToolbar: View {
         case .album(let id): return library.album(id: id)?.title ?? "Album"
         case .artist(let id): return library.artist(id: id)?.name ?? "Artist"
         case .playlist(let id): return library.playlist(id: id)?.name ?? "Playlist"
-        case .youtubePlaylist(let id): return YouTubeLibrary.shared.playlists.first { $0.id == id }?.title ?? "Playlist"
         }
     }
 
@@ -236,7 +222,6 @@ struct LibraryToolbar: View {
         case .artists: return nil
         case .musicVideos: return library.videos.count
         case .movies: return library.movies.count
-        case .youtube: return nil
         }
     }
 
@@ -277,11 +262,6 @@ struct LibraryToolbar: View {
                 .foregroundStyle(HushStyle.ink)
                 .focused($searchFocused)
                 .onExitCommand { text.wrappedValue = ""; searchFocused = false }
-                // YouTube search costs quota: it runs on Enter only.
-                .onSubmit { if section == .youtube { YouTubeLibrary.shared.search(text.wrappedValue) } }
-                .onChange(of: text.wrappedValue) { _, value in
-                    if section == .youtube, value.isEmpty { YouTubeLibrary.shared.clearSearch() }
-                }
             if text.wrappedValue.isEmpty {
                 Text("⌘F")
                     .font(HushStyle.rounded(10.5, weight: .semibold))
@@ -395,7 +375,6 @@ struct SidebarView: View {
                     VStack(spacing: 2) {
                         row(.musicVideos, count: library.videos.count)
                         row(.movies, count: library.movies.count)
-                        row(.youtube, count: 0)
                     }
                     if !library.playlists.isEmpty {
                         header("PLAYLISTS", top: 18)
@@ -562,14 +541,12 @@ struct PlaylistSidebarRow: View {
 // MARK: - States
 
 struct LoadingView: View {
-    var message = "Reading your Music library"
-
     var body: some View {
         VStack(spacing: 14) {
             ProgressView()
                 .controlSize(.small)
                 .tint(HushStyle.gold)
-            Text(message)
+            Text("Reading your Music library")
                 .font(HushStyle.rounded(13))
                 .foregroundStyle(HushStyle.muted)
         }
