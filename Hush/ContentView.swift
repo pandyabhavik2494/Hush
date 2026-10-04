@@ -3,13 +3,14 @@ import MusicKit
 import SwiftUI
 import UIKit
 
-/// Tab order (left to right, and the swipe order): Albums, Songs, Playlists, Artists.
+/// Tab order (left to right, and the swipe order): Albums, Songs, Playlists, Artists, Videos, Movies.
 private enum LibraryTab: String, CaseIterable {
     case albums = "Albums"
     case songs = "Songs"
     case playlists = "Playlists"
     case artists = "Artists"
     case videos = "Videos"
+    case movies = "Movies"
 }
 
 private enum LibrarySort: String, CaseIterable {
@@ -438,8 +439,15 @@ struct ContentView: View {
     @State private var visibleVideos: [LibraryVideo] = []
     @State private var visibleVideoIDs: [UInt64] = []
     @State private var visibleVideoLetters: [String] = []
-    /// Title of a tapped video that can't be played here (not on this iPhone); shows a short note.
-    @State private var unavailableVideoTitle: String?
+    @State private var visibleMovies: [LibraryVideo] = []
+    @State private var visibleMovieIDs: [UInt64] = []
+    @State private var visibleMovieLetters: [String] = []
+    /// Every genre tag among the movies, A–Z, for the filter above the posters.
+    @State private var movieGenres: [String] = []
+    /// The genre the Movies tab is narrowed to; nil shows every movie.
+    @State private var movieGenre: String?
+    /// A tapped video or movie that can't be played here (not on this iPhone); shows a short note.
+    @State private var unavailableVideo: LibraryVideo?
 
     private func rebuildVisibleLibrary() {
         let query = LibrarySearch.normalizedQuery(searchText)
@@ -470,6 +478,19 @@ struct ContentView: View {
         visibleVideos = videos
         visibleVideoIDs = videos.map(\.id)
         visibleVideoLetters = sort == .alphabetical ? videos.map(\.sectionLetter) : []
+
+        movieGenres = Array(Set(library.movies.compactMap(\.genre)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        if let genre = movieGenre, !movieGenres.contains(genre) { movieGenre = nil }
+        var movies = library.movies.filter { movie in
+            (movieGenre == nil || movie.genre == movieGenre) && LibrarySearch.matches(movie.searchKey, query: query)
+        }
+        if sort == .mostPlayed {
+            movies = Self.sortedByPlayCount(movies) { $0.item?.playCount ?? 0 }
+        }
+        visibleMovies = movies
+        visibleMovieIDs = movies.map(\.id)
+        visibleMovieLetters = sort == .alphabetical ? movies.map(\.sectionLetter) : []
 
         var artists = LibrarySearch.filterByNameThenSongs(
             library.artists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
@@ -552,20 +573,25 @@ struct ContentView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .alert(
-                "This video isn't on your iPhone",
+                unavailableVideo?.isMovie == true ? "This movie isn't on your iPhone" : "This video isn't on your iPhone",
                 isPresented: Binding(
-                    get: { unavailableVideoTitle != nil },
-                    set: { if !$0 { unavailableVideoTitle = nil } }
+                    get: { unavailableVideo != nil },
+                    set: { if !$0 { unavailableVideo = nil } }
                 ),
-                presenting: unavailableVideoTitle
+                presenting: unavailableVideo
             ) { _ in
                 Button("OK", role: .cancel) {}
-            } message: { title in
-                Text("“\(title)” is still in the cloud or is copy-protected. Download it in the Music app, then pull down here to refresh.")
+            } message: { video in
+                if video.isMovie {
+                    Text("“\(video.title)” is still in the cloud or is copy-protected (movies bought from the iTunes Store can only play in the TV app). Sync your own copy from the Mac, then pull down here to refresh.")
+                } else {
+                    Text("“\(video.title)” is still in the cloud or is copy-protected. Download it in the Music app, then pull down here to refresh.")
+                }
             }
             .task { library.requestAccess() }
             .onAppear(perform: rebuildVisibleLibrary)
             .onChange(of: searchText) { rebuildVisibleLibrary() }
+            .onChange(of: movieGenre) { rebuildVisibleLibrary() }
             .onChange(of: sort) {
                 rebuildVisibleLibrary()
             }
@@ -863,6 +889,7 @@ struct ContentView: View {
         case .songs: return "Find a song, artist or album"
         case .playlists: return "Find a playlist or song"
         case .videos: return "Find a video"
+        case .movies: return "Find a movie or genre"
         }
     }
 
@@ -882,9 +909,9 @@ struct ContentView: View {
                             .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
                             .foregroundStyle(selectedTab == tab ? HushStyle.paper : HushStyle.ink.opacity(0.92))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .padding(.horizontal, 4)
-                            // Five tabs share the full width equally (the count sits in the title row).
+                            .minimumScaleFactor(0.7)
+                            .padding(.horizontal, 3)
+                            // Six tabs share the full width equally (the count sits in the title row).
                             .frame(maxWidth: .infinity)
                             .frame(height: 32)
                             .background {
@@ -917,6 +944,7 @@ struct ContentView: View {
         case .songs: return "\(visibleSongs.count)"
         case .playlists: return "\(visiblePlaylists.count)"
         case .videos: return "\(visibleVideos.count)"
+        case .movies: return "\(visibleMovies.count)"
         }
     }
 
@@ -952,6 +980,9 @@ struct ContentView: View {
                 videosPage
                     .underLibraryHeader()
                     .tag(LibraryTab.videos)
+                moviesPage
+                    .underLibraryHeader()
+                    .tag(LibraryTab.movies)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             // A paging TabView clips its pages to its own frame. Stretch it up to the top of the
@@ -1142,10 +1173,120 @@ struct ContentView: View {
         }
     }
 
+    /// Movies from the phone's library, as posters, with a genre filter on top. Tap one to watch it
+    /// full screen in the same player as the music videos.
+    @ViewBuilder
+    private var moviesPage: some View {
+        if visibleMovies.isEmpty {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    if !movieGenres.isEmpty {
+                        genreFilter
+                            .padding(.top, 20)
+                    }
+                    VStack(spacing: 12) {
+                        let filtered = !searchText.isEmpty || movieGenre != nil
+                        Image(systemName: filtered ? "magnifyingglass" : "film")
+                            .font(.system(size: 31, weight: .light))
+                            .foregroundStyle(HushStyle.gold.opacity(0.85))
+                        Text(filtered ? "No movies found" : "No movies yet")
+                            .font(.system(size: 21, weight: .regular, design: .serif))
+                            .foregroundStyle(HushStyle.ink)
+                        Text(filtered
+                             ? "Try another name or genre."
+                             : "Movies synced to this iPhone from the TV app on your Mac appear here. Pull down to check again.")
+                            .font(.system(size: 14))
+                            .foregroundStyle(HushStyle.muted)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 290)
+                    }
+                    .padding(28)
+                    .frame(maxWidth: .infinity, minHeight: 250)
+                }
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await library.refreshLibrary() }
+        } else {
+            movieGrid
+        }
+    }
+
+    private var movieGrid: some View {
+        FastScrollContainer(
+            itemIDs: visibleMovieIDs,
+            itemLetters: visibleMovieLetters,
+            isAlphabetical: sort == .alphabetical,
+            itemsPerRow: 3,
+            estimatedRowHeight: 220,
+            estimatedPadding: movieGenres.isEmpty ? 36 : 82,
+            onRefresh: { await library.refreshLibrary() },
+            scrollToTopSignal: scrollToTop.signal(for: .movies)
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                if !movieGenres.isEmpty {
+                    genreFilter
+                        .underHeaderBlur()
+                }
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+                    alignment: .leading,
+                    spacing: 16
+                ) {
+                    ForEach(visibleMovies) { movie in
+                        Button {
+                            play(movie)
+                        } label: {
+                            MovieTile(movie: movie)
+                        }
+                        .buttonStyle(TilePressStyle())
+                        .underHeaderBlur()
+                        .id(movie.id)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// "All" plus one pill per genre; tapping a pill shows only that genre (tap again for all).
+    private var genreFilter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                genrePill("All", isSelected: movieGenre == nil) { movieGenre = nil }
+                ForEach(movieGenres, id: \.self) { genre in
+                    genrePill(genre, isSelected: movieGenre == genre) {
+                        movieGenre = movieGenre == genre ? nil : genre
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .scrollClipDisabled()
+    }
+
+    private func genrePill(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            withAnimation(.snappy(duration: 0.25)) { action() }
+        } label: {
+            Text(title)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .foregroundStyle(isSelected ? HushStyle.paper : HushStyle.ink.opacity(0.9))
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(isSelected ? HushStyle.gold : HushStyle.surface, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     /// Stops the music and opens the video full screen; says why when it can't be played here.
     private func play(_ video: LibraryVideo) {
         guard video.assetURL != nil else {
-            unavailableVideoTitle = video.title
+            unavailableVideo = video
             return
         }
         Haptics.play()

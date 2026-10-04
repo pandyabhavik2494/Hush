@@ -72,6 +72,96 @@ struct VideoTile: View {
     }
 }
 
+// MARK: - Movies
+
+/// One movie in the Movies tab: its poster, then the title, with the year and genre underneath.
+struct MovieTile: View {
+    let movie: LibraryVideo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            MoviePoster(movie: movie)
+                .overlay(alignment: .topTrailing) {
+                    // Not on this iPhone (still in the cloud) or copy-protected: can't be played here.
+                    if movie.assetURL == nil {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(.black.opacity(0.62), in: Circle())
+                            .padding(5)
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(movie.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(HushStyle.ink)
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                if let details = Self.details(movie) {
+                    Text(details)
+                        .font(.system(size: 11))
+                        .foregroundStyle(HushStyle.muted)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([movie.title, Self.details(movie)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(movie.assetURL == nil ? "Not downloaded to this iPhone" : "Plays the movie")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// "2019 · Drama"; nil when neither is known.
+    static func details(_ movie: LibraryVideo) -> String? {
+        let parts = [movie.year.map(String.init), movie.genre].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// A movie's poster in the usual 2:3 shape: its own artwork, or a placeholder when it has none.
+struct MoviePoster: View {
+    let movie: LibraryVideo
+    @State private var image: UIImage?
+
+    init(movie: LibraryVideo) {
+        self.movie = movie
+        _image = State(initialValue: VideoThumbnails.cached(movie.id))
+    }
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            .overlay {
+                ZStack {
+                    HushStyle.surface
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .transition(.opacity)
+                    } else {
+                        Image(systemName: "film")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundStyle(HushStyle.muted.opacity(0.7))
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .animation(.easeOut(duration: 0.2), value: image != nil)
+            .task(id: movie.id) {
+                guard image == nil else { return }
+                let loaded = await VideoThumbnails.image(for: movie)
+                guard !Task.isCancelled else { return }
+                image = loaded
+            }
+    }
+}
+
 // MARK: - Thumbnails
 
 /// A still for a video: the poster the Music app already has, or else a frame taken from the file.
@@ -134,8 +224,10 @@ enum VideoThumbnails {
         if let pending = inFlight[video.id] { return await pending.value }
 
         // MediaPlayer hands out artwork reliably only on the main thread, so ask for it here.
-        let poster = video.item?.artwork?.image(at: CGSize(width: 640, height: 360))
-        let url = video.assetURL
+        let posterSize = video.isMovie ? CGSize(width: 400, height: 600) : CGSize(width: 640, height: 360)
+        let poster = video.item?.artwork?.image(at: posterSize)
+        // A frame from the film would be wide, not poster-shaped: movies without artwork keep the placeholder.
+        let url = video.isMovie ? nil : video.assetURL
         let duration = video.duration
         let work = Task<UIImage?, Never> {
             if let poster { return await poster.byPreparingForDisplay() ?? poster }
@@ -163,7 +255,7 @@ enum VideoThumbnails {
 
 // MARK: - Playback
 
-/// Plays a video in the system's full-screen player (scrubbing, AirPlay, subtitles, close button
+/// Plays a video or movie in the system's full-screen player (scrubbing, AirPlay, subtitles, close button
 /// and swipe-down all come with it).
 @MainActor
 enum VideoPlayback {

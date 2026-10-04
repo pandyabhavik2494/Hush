@@ -149,7 +149,7 @@ enum ArtistCredits {
     }
 }
 
-/// A music video kept in the Music app.
+/// A music video or a movie kept in the phone's media library.
 struct LibraryVideo: Identifiable {
     let id: UInt64
     let title: String
@@ -162,6 +162,12 @@ struct LibraryVideo: Identifiable {
     let item: MPMediaItem?
     let searchKey: String
     let sectionLetter: String
+    /// Movies only: shown in the Movies tab, with a 2:3 poster.
+    var isMovie = false
+    /// The genre tag, e.g. "Drama" (nil when it has none).
+    var genre: String?
+    /// Year of release, when the file says.
+    var year: Int?
 }
 
 /// Precomputed per-song data used by search and the A–Z index.
@@ -236,13 +242,15 @@ private struct LibrarySnapshot: @unchecked Sendable {
     var playlists: [MusicPlaylist] = []
     var artists: [MusicArtist] = []
     var videos: [LibraryVideo] = []
+    var movies: [LibraryVideo] = []
     /// Fingerprint of what the UI shows (songs, albums, playlists and their contents). iOS reports
     /// "library changed" even for play-count updates; if this is unchanged, nothing is redrawn.
     var signature = 0
 
     static func load() -> LibrarySnapshot {
         var snapshot = LibrarySnapshot()
-        // Videos belong only in the Videos tab, so they are kept out of songs, albums, artists and playlists.
+        // Videos and movies belong only in their own tabs, so they are kept out of songs, albums,
+        // artists and playlists.
         let items = (MPMediaQuery.songs().items ?? []).filter { !$0.isVideo }
         var titled: [(item: MPMediaItem, title: String)] = []
         titled.reserveCapacity(items.count)
@@ -283,6 +291,7 @@ private struct LibrarySnapshot: @unchecked Sendable {
         snapshot.playlists = Self.loadPlaylists()
         snapshot.artists = Self.buildArtists(from: albums)
         snapshot.videos = Self.loadVideos()
+        snapshot.movies = Self.loadMovies()
         snapshot.signature = Self.signature(of: snapshot)
         return snapshot
     }
@@ -297,7 +306,9 @@ private struct LibrarySnapshot: @unchecked Sendable {
             query.addFilterPredicate(
                 MPMediaPropertyPredicate(value: type.rawValue, forProperty: MPMediaItemPropertyMediaType)
             )
-            for item in query.items ?? [] where seen.insert(item.persistentID).inserted {
+            // Movies have a tab of their own.
+            for item in query.items ?? []
+            where !item.mediaType.contains(.movie) && seen.insert(item.persistentID).inserted {
                 let rawTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let title = rawTitle.isEmpty ? "Untitled Video" : rawTitle
                 let rawArtist = (item.artist ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -319,6 +330,36 @@ private struct LibrarySnapshot: @unchecked Sendable {
         return videos
     }
 
+    /// Movies in the phone's library (synced from the Mac's TV app), A–Z. Only the Movies tab shows them.
+    private static func loadMovies() -> [LibraryVideo] {
+        let query = MPMediaQuery()
+        query.addFilterPredicate(
+            MPMediaPropertyPredicate(value: MPMediaType.movie.rawValue, forProperty: MPMediaItemPropertyMediaType)
+        )
+        var movies: [LibraryVideo] = (query.items ?? []).map { item in
+            let rawTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = rawTitle.isEmpty ? "Untitled Movie" : rawTitle
+            let rawGenre = (item.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let genre = rawGenre.isEmpty ? nil : rawGenre
+            let year = item.releaseDate.map { Calendar.current.component(.year, from: $0) }
+            return LibraryVideo(
+                id: item.persistentID,
+                title: title,
+                artist: nil,
+                duration: item.playbackDuration,
+                assetURL: item.assetURL,
+                item: item,
+                searchKey: LibrarySearch.key([title, genre]),
+                sectionLetter: LibraryAlphabet.section(for: title),
+                isMovie: true,
+                genre: genre,
+                year: year
+            )
+        }
+        movies.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        return movies
+    }
+
     private static func signature(of snapshot: LibrarySnapshot) -> Int {
         var hasher = Hasher()
         hasher.combine(snapshot.songs.count)
@@ -333,11 +374,12 @@ private struct LibrarySnapshot: @unchecked Sendable {
             hasher.combine(playlist.name)
             for item in playlist.items { hasher.combine(item.persistentID) }
         }
-        for video in snapshot.videos {
+        for video in snapshot.videos + snapshot.movies {
             hasher.combine(video.id)
             hasher.combine(video.title)
             // A video that has just finished downloading becomes playable: redraw for that too.
             hasher.combine(video.assetURL != nil)
+            hasher.combine(video.genre)
         }
         return hasher.finalize()
     }
@@ -561,6 +603,8 @@ final class MusicLibraryStore: ObservableObject {
     @Published private(set) var artists: [MusicArtist] = []
     /// Music videos from the Music app, A–Z.
     @Published private(set) var videos: [LibraryVideo] = []
+    /// Movies from the phone's library, A–Z.
+    @Published private(set) var movies: [LibraryVideo] = []
     /// Artists you've marked as favorites (their normalized ids), remembered between launches.
     @Published private(set) var favoriteArtistIDs: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "hush.favoriteArtists") ?? [])
@@ -790,6 +834,7 @@ final class MusicLibraryStore: ObservableObject {
         playlists = snapshot.playlists
         artists = snapshot.artists
         videos = snapshot.videos
+        movies = snapshot.movies
         // Start fetching artist photos now, in the background, so the Artists tab is ready.
         let photoRequests = snapshot.artists.map { (key: $0.id, name: $0.name) }
         Task.detached(priority: .utility) {
@@ -1541,6 +1586,6 @@ final class MusicLibraryStore: ObservableObject {
 }
 
 extension MPMediaItem {
-    /// True for music videos, home videos and any other video entry in the library.
+    /// True for music videos, home videos, movies and any other video entry in the library.
     var isVideo: Bool { !mediaType.intersection(.anyVideo).isEmpty }
 }
