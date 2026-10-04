@@ -94,7 +94,7 @@ struct AppleTVMovieTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                AppleTVHandOff.open(movie.id, title: movie.title)
+                AppleTVHandOff.open(movie.id, title: movie.title, isDownloaded: movie.isDownloaded)
             } label: {
                 CoverView(id: movie.id, pixels: 900, cornerRadius: 10, aspectRatio: 16 / 9, placeholderSymbol: "appletv")
                     .overlay {
@@ -118,8 +118,8 @@ struct AppleTVMovieTile: View {
         .onHover { hovering in withAnimation(.easeOut(duration: 0.15)) { isHovering = hovering } }
         .help(showsTitle ? "Plays in the TV app" : "\(movie.title) — plays in the TV app")
         .contextMenu {
-            Button("Play in the TV App") { AppleTVHandOff.open(movie.id, title: movie.title) }
-            Button("Show in the TV App") { AppleTVHandOff.open(movie.id, title: movie.title, play: false) }
+            Button("Play in the TV App") { AppleTVHandOff.open(movie.id, title: movie.title, isDownloaded: movie.isDownloaded) }
+            Button("Show in the TV App") { AppleTVHandOff.open(movie.id, title: movie.title, isDownloaded: movie.isDownloaded, play: false) }
         }
     }
 }
@@ -221,7 +221,7 @@ struct AppleTVShowPage: View {
                     .padding(.top, -6)
                 Button {
                     if let first = episodes.first ?? show.episodes.first {
-                        AppleTVHandOff.open(first.id, title: show.name, play: false)
+                        AppleTVHandOff.open(first.id, title: show.name, isDownloaded: first.isDownloaded, play: false)
                     } else {
                         AppleTVHandOff.openTVApp()
                     }
@@ -272,7 +272,7 @@ struct AppleTVEpisodeRow: View {
 
     var body: some View {
         Button {
-            AppleTVHandOff.open(episode.id, title: "\(showName) S\(episode.season) E\(episode.number)")
+            AppleTVHandOff.open(episode.id, title: "\(showName) S\(episode.season) E\(episode.number)", isDownloaded: episode.isDownloaded)
         } label: {
             HStack(spacing: 14) {
                 Text(episode.number > 0 ? "\(episode.number)" : "")
@@ -309,8 +309,8 @@ struct AppleTVEpisodeRow: View {
         .onHover { isHovering = $0 }
         .help("Plays in the TV app")
         .contextMenu {
-            Button("Play in the TV App") { AppleTVHandOff.open(episode.id, title: showName) }
-            Button("Show in the TV App") { AppleTVHandOff.open(episode.id, title: showName, play: false) }
+            Button("Play in the TV App") { AppleTVHandOff.open(episode.id, title: showName, isDownloaded: episode.isDownloaded) }
+            Button("Show in the TV App") { AppleTVHandOff.open(episode.id, title: showName, isDownloaded: episode.isDownloaded, play: false) }
         }
     }
 }

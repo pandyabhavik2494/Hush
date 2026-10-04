@@ -12,6 +12,8 @@ struct AppleTVMovie: Identifiable, Hashable, Sendable {
     let genre: String?
     let genres: [String]
     let duration: TimeInterval
+    /// Downloaded to this Mac (the TV app can play it straight away); otherwise it streams.
+    let isDownloaded: Bool
     let searchKey: String
     let sectionLetter: String
 
@@ -29,6 +31,8 @@ struct AppleTVEpisode: Identifiable, Hashable, Sendable {
     let season: Int
     let number: Int
     let duration: TimeInterval
+    /// Downloaded to this Mac (the TV app can play it straight away); otherwise it streams.
+    let isDownloaded: Bool
 }
 
 /// A series bought on Apple TV, with every episode in the library.
@@ -71,6 +75,7 @@ enum AppleTVLibrary {
             genre: genre,
             genres: LibraryLoader.splitGenres(genre),
             duration: TimeInterval(item.totalTime) / 1000,
+            isDownloaded: item.location != nil,
             searchKey: LibrarySearch.key([title, genre]),
             sectionLetter: LibraryAlphabet.section(for: title)
         )
@@ -114,39 +119,45 @@ enum AppleTVLibrary {
         let title = LibraryLoader.nonEmpty(rawTitle) ?? "Episode"
         let duration = TimeInterval(item.totalTime) / 1000
         if let parsed = AppleTVPurchases.parseEpisodeTitle(title) {
-            return AppleTVEpisode(id: id, title: parsed.title, season: parsed.season, number: parsed.number, duration: duration)
+            return AppleTVEpisode(id: id, title: parsed.title, season: parsed.season, number: parsed.number,
+                                  duration: duration, isDownloaded: item.location != nil)
         }
         let season = AppleTVPurchases.seasonNumber(in: album) ?? Int(item.videoInfo?.season ?? 0)
         let order = Int(item.videoInfo?.episodeOrder ?? 0)
         let number = order > 0 ? order : Int(item.trackNumber)
-        return AppleTVEpisode(id: id, title: title, season: max(season, 1), number: number, duration: duration)
+        return AppleTVEpisode(id: id, title: title, season: max(season, 1), number: number,
+                              duration: duration, isDownloaded: item.location != nil)
     }
 }
 
 // MARK: - Handing off to the TV app
 
-/// Opens a purchase in the TV app: the exact movie or episode (the TV app and the library share
-/// persistent IDs, so Hush asks the TV app, through its scripting interface, to play that item),
-/// full screen. Hush's own playback pauses first and isn't resumed. When the player closes (playback
-/// stops, full screen ends, or the TV app quits), Hush comes back to the front on the page you left.
-/// The first time, macOS asks whether Hush may control TV; if that isn't allowed, or anything
-/// fails, the TV app simply opens.
+/// Opens a purchase in the TV app (the TV app and the library share persistent IDs, so Hush asks
+/// the TV app, through its scripting interface, for that exact item). The TV app has to be in front
+/// before its player will start, so it's brought forward first. A downloaded purchase plays straight
+/// away, full screen, and Hush comes back to the front when you're done (see AppleTVWatcher). A
+/// purchase that's only in the cloud can't be started by another app (the TV app streams store
+/// purchases only from its own Play button), so the TV app shows that title, ready for you to press
+/// Play. Hush's own playback pauses first and isn't resumed. The first time, macOS asks whether Hush
+/// may control TV; if that isn't allowed, or anything fails, the TV app simply opens.
 enum AppleTVHandOff {
     @MainActor
-    static func open(_ id: UInt64, title: String, play: Bool = true) {
+    static func open(_ id: UInt64, title: String, isDownloaded: Bool, play: Bool = true) {
         Player.shared.setPlaying(false)
         VideoPlayback.shared.pauseForMusic()
-        Player.shared.showToast("Opening \(title) in the TV app")
+        let playsHere = play && isDownloaded
+        Player.shared.showToast(playsHere ? "Opening \(title) in the TV app" : "\(title) is ready in the TV app: press Play to stream it")
         let persistentID = String(format: "%016llX", id)
-        let verb = play ? "play" : "reveal"
-        // Play (or show) the item, bring the TV app forward, then full screen once its player is up.
+        let action = playsHere
+            ? "play (item 1 of found)\n        delay 1\n        try\n            set full screen of window 1 to true\n        end try"
+            : "reveal (item 1 of found)"
         let source = """
         tell application id "com.apple.TV"
+            activate
+            delay 1
             set found to (every track of library playlist 1 whose persistent ID is "\(persistentID)")
             if (count of found) is 0 then error "not found"
-            \(verb) (item 1 of found)
-            activate
-            \(play ? "delay 1\n        try\n            set full screen of window 1 to true\n        end try" : "")
+            \(action)
         end tell
         """
         AppleTVWatcher.shared.stop()
@@ -156,8 +167,12 @@ enum AppleTVHandOff {
             DispatchQueue.main.async {
                 if let error {
                     hushLog.info("TV hand-off fell back to opening the TV app: \(error.description, privacy: .public)")
+                    if (error[NSAppleScript.errorNumber] as? Int) == -1743 {
+                        // macOS hasn't let Hush control TV (or the permission was turned off).
+                        Player.shared.showToast("Allow Hush in System Settings › Privacy & Security › Automation")
+                    }
                     openTVApp()
-                } else if play {
+                } else if playsHere {
                     AppleTVWatcher.shared.start()
                 }
             }
