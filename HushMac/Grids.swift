@@ -7,7 +7,7 @@ import SwiftUI
 /// (2 pt gutters); with titles shown it's the roomy grid. An A–Z rail on the right jumps to a letter.
 struct TileGrid<Item: Identifiable, Tile: View>: View where Item.ID: Hashable {
     let items: [Item]
-    var minimumWidth: CGFloat = 160
+    var minimumWidth: CGFloat = 212
     var isMosaic = false
     var spacing: (column: CGFloat, row: CGFloat) = (22, 26)
     /// Section letter for the A–Z rail (nil: no rail).
@@ -187,7 +187,7 @@ struct AlbumTile: View {
             Button {
                 navigator.show(.album(album.id))
             } label: {
-                CoverView(id: album.artworkTrackID, pixels: 400, cornerRadius: showsTitle ? 9 : 4)
+                CoverView(id: album.artworkTrackID, pixels: 500, cornerRadius: showsTitle ? 9 : 4)
                     .overlay(
                         RoundedRectangle(cornerRadius: showsTitle ? 9 : 4, style: .continuous)
                             .stroke(Color.white.opacity(showsTitle ? 0.05 : 0), lineWidth: 1)
@@ -256,7 +256,7 @@ struct PlaylistTile: View {
             Button {
                 navigator.show(.playlist(playlist.id))
             } label: {
-                PlaylistCover(playlist: playlist, pixels: 400, cornerRadius: showsTitle ? 9 : 4)
+                PlaylistCover(playlist: playlist, pixels: 500, cornerRadius: showsTitle ? 9 : 4)
                     .overlay(alignment: .bottomLeading) {
                         if !showsTitle && !PlaylistCover.hasOwnArtwork(playlist, in: library) {
                             // The mosaic doesn't carry the playlist's name the way album art does.
@@ -317,7 +317,7 @@ struct ArtistsGrid: View {
             } else {
                 TileGrid(
                     items: others,
-                    minimumWidth: 132,
+                    minimumWidth: 176,
                     spacing: (30, 26),
                     letter: sort != .mostPlayed && query.isEmpty ? { $0.sectionLetter } : nil,
                     header: favorites.isEmpty ? nil : AnyView(favoritesRow(favorites))
@@ -331,7 +331,7 @@ struct ArtistsGrid: View {
     private func favoritesRow(_ favorites: [Artist]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("FAVOURITES", color: HushStyle.gold)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 250), spacing: 30, alignment: .top)], alignment: .leading, spacing: 26) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 176, maximum: 330), spacing: 30, alignment: .top)], alignment: .leading, spacing: 26) {
                 ForEach(favorites) { ArtistTile(artist: $0) }
             }
             sectionLabel("EVERYONE ELSE", color: HushStyle.muted)
@@ -416,7 +416,7 @@ struct MusicVideosGrid: View {
                 EmptyStateView(symbol: "play.rectangle", title: query.isEmpty ? "No music videos" : "No matches",
                                message: query.isEmpty ? "Music videos in your Music library show up here." : "Try another name.")
             } else {
-                TileGrid(items: videos, minimumWidth: 260, spacing: (20, 24),
+                TileGrid(items: videos, minimumWidth: 340, spacing: (20, 26),
                          letter: sort == .alphabetical && query.isEmpty ? { $0.sectionLetter } : nil) { video in
                     VideoTile(video: video) { playback.play(video, in: videos) }
                 }
@@ -433,7 +433,7 @@ struct VideoTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: play) {
-                CoverView(id: video.id, pixels: 640, cornerRadius: 9, aspectRatio: 16 / 9, kind: .videoStill, placeholderSymbol: "play.rectangle")
+                CoverView(id: video.id, pixels: 800, cornerRadius: 9, aspectRatio: 16 / 9, kind: .videoStill, placeholderSymbol: "play.rectangle")
                     .overlay(alignment: .bottomTrailing) {
                         Text(HushStyle.timestamp(video.duration))
                             .font(HushStyle.rounded(10.5, weight: .semibold))
@@ -524,7 +524,8 @@ struct MoviesGrid: View {
                 EmptyStateView(symbol: "film", title: query.isEmpty ? "No movies" : "No matches",
                                message: query.isEmpty ? "Movies from your TV app library show up here." : "Try another title or genre.")
             } else {
-                TileGrid(items: movies, minimumWidth: 150, isMosaic: !showsTitles, spacing: (20, 26),
+                // Posters always get room around them (no edge-to-edge mosaic here).
+                TileGrid(items: movies, minimumWidth: 200, spacing: (20, 28),
                          letter: sort == .alphabetical && query.isEmpty ? { $0.sectionLetter } : nil) { movie in
                     MovieTile(movie: movie, showsTitle: showsTitles) { playback.play(movie, in: movies) }
                 }
@@ -563,7 +564,7 @@ struct MovieTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: play) {
-                CoverView(id: movie.id, pixels: 500, cornerRadius: showsTitle ? 9 : 4, aspectRatio: 2 / 3, placeholderSymbol: "film")
+                CoverView(id: movie.id, pixels: 600, cornerRadius: 10, aspectRatio: 2 / 3, placeholderSymbol: "film")
                     .overlay {
                         if isHovering {
                             Image(systemName: movie.canPlayInHush ? "play.fill" : "tv")
@@ -578,7 +579,7 @@ struct MovieTile: View {
                     .overlay(alignment: .topLeading) {
                         if !movie.canPlayInHush { TVAppBadge().padding(8) }
                     }
-                    .shadow(color: .black.opacity(showsTitle ? 0.42 : 0), radius: 12, y: 8)
+                    .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
             .buttonStyle(PressScaleButtonStyle())
             if showsTitle {

@@ -389,10 +389,10 @@ struct ArtistPage: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 CoverView(id: album.artworkTrackID, pixels: 400, cornerRadius: 9)
-                                    .frame(width: 168, height: 168)
+                                    .frame(width: 220, height: 220)
                                     .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
                                 TileCaption(title: album.title, subtitle: [album.year.map(String.init), HushStyle.songCount(album.tracks.count)].compactMap { $0 }.joined(separator: " · "))
-                                    .frame(width: 168)
+                                    .frame(width: 220)
                             }
                         }
                         .buttonStyle(PressScaleButtonStyle())
