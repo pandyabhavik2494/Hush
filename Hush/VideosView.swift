@@ -268,19 +268,32 @@ enum VideoThumbnails {
 // MARK: - Playback
 
 /// Plays a video or movie in the system's full-screen player (scrubbing, AirPlay, subtitles, close button
-/// and swipe-down all come with it).
+/// and swipe-down all come with it), with Picture in Picture: the player's own button, or going to the
+/// Home Screen while a video plays, shrinks it into the floating window, which keeps playing over other
+/// apps; its restore button brings it back into Hush's player, its close button stops it.
 @MainActor
 enum VideoPlayback {
     /// The player keeps only a weak link to its delegate, so this one lives for the whole app.
     private static let delegate = PlayerDelegate()
+    /// The player whose video is in the floating window. Picture in Picture stops if the player is
+    /// let go, so it's kept here until the window closes or the video comes back.
+    fileprivate static var floating: AVPlayerViewController?
 
     /// Opens the player. Returns false when the video can't be played here (no file on this iPhone).
     @discardableResult
     static func present(_ video: LibraryVideo) -> Bool {
         guard let url = video.assetURL, let presenter = topViewController() else { return false }
 
-        // Same category the music uses: sound plays even with the silent switch on.
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        // Same category the music uses: sound plays even with the silent switch on. Active before the
+        // video starts, so Picture in Picture is offered and the video keeps going off screen.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+
+        // A new video replaces one still floating in Picture in Picture.
+        if let floating {
+            floating.player?.pause()
+            self.floating = nil
+        }
 
         let item = AVPlayerItem(url: url)
         item.externalMetadata = metadata(for: video)
@@ -288,8 +301,8 @@ enum VideoPlayback {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.modalPresentationStyle = .fullScreen
-        // Picture in Picture would leave a video playing after its screen is gone; keep it simple.
-        controller.allowsPictureInPicturePlayback = false
+        controller.allowsPictureInPicturePlayback = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.delegate = delegate
         presenter.present(controller, animated: true) {
             player.play()
@@ -312,7 +325,7 @@ enum VideoPlayback {
     }
 
     /// The screen that's showing right now (the library, or whatever is presented over it).
-    private static func topViewController() -> UIViewController? {
+    fileprivate static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first
         var top = window?.rootViewController
@@ -332,10 +345,52 @@ enum VideoPlayback {
                     // A swipe-down that was let go and sprang back: the video is still on screen.
                     guard !context.isCancelled else { return }
                     MainActor.assumeIsolated {
-                        playerViewController.player?.pause()
+                        // Going into Picture in Picture also ends full screen; that video plays on.
+                        if VideoPlayback.floating !== playerViewController {
+                            playerViewController.player?.pause()
+                        }
                         HushAppDelegate.refreshSupportedOrientations()
                     }
                 }
+            }
+        }
+
+        func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            MainActor.assumeIsolated { VideoPlayback.floating = playerViewController }
+        }
+
+        func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            MainActor.assumeIsolated {
+                // Closed from the floating window (a restore has already put it back on screen).
+                guard VideoPlayback.floating === playerViewController else { return }
+                if playerViewController.presentingViewController == nil {
+                    playerViewController.player?.pause()
+                }
+                VideoPlayback.floating = nil
+            }
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            failedToStartPictureInPictureWithError error: Error
+        ) {
+            MainActor.assumeIsolated { VideoPlayback.floating = nil }
+        }
+
+        /// The floating window's restore button: the player comes back full screen, where it was.
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+        ) {
+            nonisolated(unsafe) let completion = completionHandler
+            MainActor.assumeIsolated {
+                if VideoPlayback.floating === playerViewController { VideoPlayback.floating = nil }
+                guard playerViewController.presentingViewController == nil,
+                      let presenter = VideoPlayback.topViewController() else {
+                    completion(true)
+                    return
+                }
+                presenter.present(playerViewController, animated: true) { completion(true) }
             }
         }
     }
