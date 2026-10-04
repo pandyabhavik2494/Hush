@@ -6,7 +6,7 @@ import UIKit
 
 // MARK: - Tile
 
-/// One video in the Videos tab: a full-width 16:9 still with its length, and the title underneath.
+/// One video in the Videos tab: a 16:9 still with its length, and the title underneath.
 struct VideoTile: View {
     let video: LibraryVideo
 
@@ -37,9 +37,9 @@ struct VideoTile: View {
                 }
 
             Text(video.title)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(HushStyle.ink)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, 2)
         }

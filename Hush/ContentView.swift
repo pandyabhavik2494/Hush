@@ -1152,17 +1152,16 @@ struct ContentView: View {
             itemIDs: visibleVideoIDs,
             itemLetters: visibleVideoLetters,
             isAlphabetical: sort == .alphabetical,
-            itemsPerRow: 1,
-            estimatedRowHeight: 250,
+            itemsPerRow: 2,
+            estimatedRowHeight: 150,
             estimatedPadding: 36,
             onRefresh: { await library.refreshLibrary() },
             scrollToTopSignal: scrollToTop.signal(for: .videos)
         ) {
-            // One wide still per row, so each video is big enough to see what it is.
             LazyVGrid(
-                columns: [GridItem(.flexible())],
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2),
                 alignment: .leading,
-                spacing: 18
+                spacing: 16
             ) {
                 ForEach(visibleVideos) { video in
                     Button {
