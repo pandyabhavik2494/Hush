@@ -2,6 +2,8 @@
 
 @main
 struct HushApp: App {
+    /// Lets the phone turn sideways while a video is playing (see HushAppDelegate); upright otherwise.
+    @UIApplicationDelegateAdaptor(HushAppDelegate.self) private var appDelegate
     @StateObject private var library = MusicLibraryStore()
     @Environment(\.scenePhase) private var scenePhase
 

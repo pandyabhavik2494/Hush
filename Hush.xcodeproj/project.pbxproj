@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3172B0A5307190A7005F2485 /* VideosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3172B0A4307190A7005F2485 /* VideosView.swift */; };
 		A10000000000000000000001 /* HushApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* HushApp.swift */; };
 		A10000000000000000000002 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* LibraryStore.swift */; };
 		A10000000000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ContentView.swift */; };
@@ -21,6 +22,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3172B0A4307190A7005F2485 /* VideosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideosView.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* HushApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -70,6 +72,7 @@
 				B10000000000000000000010 /* Info.plist */,
 				B10000000000000000000012 /* PrivacyInfo.xcprivacy */,
 				B10000000000000000000007 /* Assets.xcassets */,
+				3172B0A4307190A7005F2485 /* VideosView.swift */,
 			);
 			path = Hush;
 			sourceTree = "<group>";
@@ -158,6 +161,7 @@
 				A10000000000000000000004 /* AlbumDetailView.swift in Sources */,
 				A10000000000000000000005 /* ArtworkView.swift in Sources */,
 				A10000000000000000000006 /* PlayerBar.swift in Sources */,
+				3172B0A5307190A7005F2485 /* VideosView.swift in Sources */,
 				A10000000000000000000008 /* NowPlayingView.swift in Sources */,
 				A10000000000000000000009 /* PlaylistViews.swift in Sources */,
 				A10000000000000000000011 /* AboutView.swift in Sources */,

@@ -6,7 +6,6 @@ import UIKit
 struct NowPlayingView: View {
     @EnvironmentObject private var library: MusicLibraryStore
     @EnvironmentObject private var playback: PlaybackStatus
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingQueue = false
     let onMinimize: () -> Void
     /// Closes the player and opens this album, artist or playlist.
@@ -26,9 +25,12 @@ struct NowPlayingView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let proposedWidth = geometry.size.width.isFinite ? geometry.size.width - 20 : 0
-            let proposedHeight = geometry.size.height.isFinite ? geometry.size.height * 0.56 : 0
-            let artworkSize = min(min(max(proposedWidth, 0), max(proposedHeight, 0)), 480)
+            let layout = PlayerArtLayout(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                topInset: geometry.safeAreaInsets.top,
+                bottomInset: geometry.safeAreaInsets.bottom
+            )
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
@@ -36,28 +38,16 @@ struct NowPlayingView: View {
                         .playerGlassGroup()
                         .padding(.horizontal, 24)
 
-                    // Crossfade to the next song's cover instead of snapping.
-                    ZStack {
-                        ArtworkView(
-                            item: library.currentItem,
-                            cornerRadius: 22,
-                            size: CGSize(width: 1000, height: 1000)
-                        )
-                        .id(library.currentItem?.persistentID)
-                        .transition(.opacity)
-                    }
-                    .animation(.easeInOut(duration: 0.35), value: library.currentItem?.persistentID)
-                        .frame(width: artworkSize, height: artworkSize)
-                        // Apple Music–style: the cover eases back a little while paused.
-                        .scaleEffect(playback.isPlaying || reduceMotion ? 1 : 0.86)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: playback.isPlaying)
-                        .shadow(color: .black.opacity(playback.isPlaying ? 0.28 : 0.14), radius: 18, x: 0, y: 10)
-                        .padding(.top, 18)
+                    // The cover is drawn behind everything (NowPlayingBackdrop), edge to edge.
+                    // This keeps its place, so the title starts just inside its lower fade.
+                    Color.clear
+                        .frame(height: layout.titleGap)
 
                     trackInformation
                         .playerGlassGroup()
                         .padding(.horizontal, 24)
-                        .padding(.top, 27)
+
+                    Spacer(minLength: 14)
 
                     TimelineView(.animation(minimumInterval: 1.0 / 4.0, paused: !playback.isPlaying)) { _ in
                         PlaybackScrubber(
@@ -69,21 +59,21 @@ struct NowPlayingView: View {
                         )
                     }
                     .padding(.horizontal, 24)
-                    .padding(.top, 25)
+
+                    Spacer(minLength: 10)
 
                     transportControls
                         .playerGlassGroup()
                         .padding(.horizontal, 24)
-                        .padding(.top, 16)
-                        .padding(.bottom, 28)
+
+                    Spacer(minLength: 14)
                 }
-                .frame(maxWidth: 520)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: max(geometry.size.height, 0))
             }
             // Only scrolls when the content doesn't fit (small phones / large text), so a downward
             // swipe goes to the close gesture instead of rubber-banding the page.
             .scrollBounceBehavior(.basedOnSize)
-            .background { NowPlayingBackdrop(item: library.currentItem) }
+            .background { NowPlayingBackdrop(item: library.currentItem, layout: layout) }
         }
         .toolbar(.hidden, for: .navigationBar)
         .tint(HushStyle.gold)
@@ -107,7 +97,7 @@ struct NowPlayingView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(HushStyle.gold)
                     .frame(width: 42, height: 42)
-                    .playerGlass(in: Circle())
+                    .playerGlass(in: Circle(), tint: PlayerArtLayout.topGlassTint)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back to library")
@@ -125,7 +115,7 @@ struct NowPlayingView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(HushStyle.gold)
                     .frame(width: 42, height: 42)
-                    .playerGlass(in: Circle())
+                    .playerGlass(in: Circle(), tint: PlayerArtLayout.topGlassTint)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Up Next")
@@ -147,7 +137,7 @@ struct NowPlayingView: View {
                     Text("PLAYING FROM \(origin.kind.uppercased())")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .tracking(0.8)
-                        .foregroundStyle(HushStyle.muted)
+                        .foregroundStyle(.white.opacity(0.82))
                         .lineLimit(1)
                     HStack(spacing: 3) {
                         Text(origin.name)
@@ -156,8 +146,9 @@ struct NowPlayingView: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(HushStyle.gold)
+                    .foregroundStyle(.white)
                 }
+                .shadow(color: .black.opacity(0.45), radius: 5, y: 1)
                 .padding(.vertical, 4)
                 .contentShape(Rectangle())
             }
@@ -168,6 +159,7 @@ struct NowPlayingView: View {
             Text("Hush")
                 .font(HushStyle.brandFont(size: 18))
                 .foregroundStyle(HushStyle.gold)
+                .shadow(color: .black.opacity(0.45), radius: 5, y: 1)
         }
     }
 
@@ -179,7 +171,7 @@ struct NowPlayingView: View {
         let credited = library.creditedArtists(in: credit)
         let label = Text(text)
             .font(.system(size: 15, weight: .medium, design: .rounded))
-            .foregroundStyle(HushStyle.muted)
+            .foregroundStyle(HushStyle.ink.opacity(0.72))
             .lineLimit(1)
         if credited.count == 1, let artist = credited.first {
             Button {
@@ -231,7 +223,7 @@ struct NowPlayingView: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(HushStyle.gold.opacity(0.9))
+                    .foregroundStyle(HushStyle.gold.opacity(0.95))
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
                 }
@@ -240,10 +232,12 @@ struct NowPlayingView: View {
             } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
                 Text(albumTitle)
                     .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(HushStyle.muted.opacity(0.78))
+                    .foregroundStyle(HushStyle.ink.opacity(0.6))
                     .lineLimit(1)
             }
         }
+        // Keeps the words crisp where they sit on the last of the cover's fade.
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -304,13 +298,13 @@ struct NowPlayingView: View {
             VStack(spacing: 3) {
                 Image(systemName: "shuffle")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.muted)
+                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.ink.opacity(0.7))
                     .frame(width: 36, height: 36)
                     .playerGlass(in: Circle())
                 Text(isEnabled ? "ON" : "OFF")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .tracking(0.7)
-                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.muted)
+                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.ink.opacity(0.7))
             }
             .frame(width: 54, height: 64)
                 .contentShape(Rectangle())
@@ -332,13 +326,13 @@ struct NowPlayingView: View {
             VStack(spacing: 3) {
                 Image(systemName: symbol)
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.muted)
+                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.ink.opacity(0.7))
                     .frame(width: 36, height: 36)
                     .playerGlass(in: Circle())
                 Text(stateLabel)
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .tracking(0.7)
-                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.muted)
+                    .foregroundStyle(isEnabled ? HushStyle.gold : HushStyle.ink.opacity(0.7))
             }
             .frame(width: 54, height: 64)
                 .contentShape(Rectangle())
@@ -474,52 +468,179 @@ private extension View {
     }
 }
 
-/// Full-screen, heavily blurred copy of the album art so the whole player takes on its colors.
+/// Where the cover sits on the player, worked out once from the screen so the cover, the color
+/// around it and the controls all agree.
+private struct PlayerArtLayout: Equatable {
+    /// Darker glass for the two top buttons: they sit over the artwork, where plain glass can
+    /// swallow the gold icons on a light cover.
+    static let topGlassTint = Color.black.opacity(0.4)
+    /// Top bar height (48) plus its top padding (4).
+    private static let topBarHeight: CGFloat = 52
+    /// How far the title reaches up into the cover's lower fade.
+    private static let titleOverlap: CGFloat = 10
+    /// Room the title, scrubber and buttons need below the cover (two-line title included).
+    private static let controlsHeight: CGFloat = 290
+
+    let width: CGFloat
+    let screenHeight: CGFloat
+    let topInset: CGFloat
+    /// From the very top of the screen to the cover's top edge.
+    let drop: CGFloat
+
+    init(width: CGFloat, height: CGFloat, topInset: CGFloat, bottomInset: CGFloat) {
+        let width = width.isFinite ? max(width, 0) : 0
+        let height = height.isFinite ? max(height, 0) : 0
+        self.width = width
+        self.topInset = topInset
+        screenHeight = height + topInset + bottomInset
+        // Ideally the cover starts a little below the status bar, leaving a band of its top color above it.
+        // On short phones it moves up so the controls still fit underneath.
+        let ideal = topInset + 34
+        let fits = screenHeight - bottomInset - Self.controlsHeight - width + Self.titleOverlap
+        drop = max(min(ideal, fits), 0)
+    }
+
+    /// The cover's bottom edge, measured from the top of the screen.
+    var coverBottom: CGFloat { drop + width }
+
+    /// Space between the top bar and the title, so the title starts just inside the cover's fade.
+    var titleGap: CGFloat {
+        max(coverBottom - Self.titleOverlap - topInset - Self.topBarHeight, 0)
+    }
+}
+
+/// Everything behind the player's controls. The cover runs edge to edge and dissolves, at its top
+/// and bottom, into its own edge colors — so the whole screen takes on the album's colors and the
+/// cover has no visible edge.
 private struct NowPlayingBackdrop: View {
     let item: MPMediaItem?
-    /// The blurred art on screen and which song it belongs to. It stays up until the next song's
-    /// is ready, then crossfades — never a flash of black between songs.
-    @State private var backdrop: UIImage?
-    @State private var backdropID: UInt64?
+    let layout: PlayerArtLayout
+    /// The colors on screen and which song they belong to. They stay up until the next song's are
+    /// ready, then crossfade — never a flash of black between songs.
+    @State private var art: PlayerArt?
+    @State private var artID: UInt64?
 
-    init(item: MPMediaItem?) {
+    init(item: MPMediaItem?, layout: PlayerArtLayout) {
         self.item = item
-        let cached = ArtworkPalette.cachedBackdrop(for: item)
-        _backdrop = State(initialValue: cached)
-        _backdropID = State(initialValue: cached == nil ? nil : item?.persistentID)
+        self.layout = layout
+        let cached = ArtworkPalette.cachedPlayerArt(for: item)
+        _art = State(initialValue: cached)
+        _artID = State(initialValue: cached == nil ? nil : item?.persistentID)
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        PlayerArtCanvas(art: art, artID: artID, layout: layout) {
+            // Crossfades to the next song's cover instead of snapping.
             ZStack {
-                HushStyle.paper
-                if let backdrop {
-                    // Blurred once with Core Image (in the background) and cached.
-                    Image(uiImage: backdrop)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
-                        .id(backdropID)
-                        .transition(.opacity)
-                }
-                // Darken toward the bottom so text and controls stay readable on any artwork.
+                ArtworkView(item: item, cornerRadius: 0, size: CGSize(width: 1200, height: 1200))
+                    .id(item?.persistentID)
+                    .transition(.opacity)
+            }
+            .animation(.easeInOut(duration: 0.35), value: item?.persistentID)
+        }
+        .task(id: item?.persistentID) {
+            guard let item, artID != item.persistentID else { return }
+            guard let loaded = await ArtworkPalette.loadPlayerArt(for: item), !Task.isCancelled else { return }
+            art = loaded
+            artID = item.persistentID
+        }
+    }
+}
+
+/// Draws the player's backdrop: the cover's edge colors, the shades that keep text readable, and
+/// the cover on top with its edges dissolved.
+private struct PlayerArtCanvas<Cover: View>: View {
+    let art: PlayerArt?
+    let artID: UInt64?
+    let layout: PlayerArtLayout
+    @ViewBuilder let cover: Cover
+
+    var body: some View {
+        let width = layout.width
+        let height = layout.screenHeight
+        // Light covers get a stronger shade so the white text and gold controls stay readable.
+        let shade = 0.20 + 0.48 * (art?.lowerBrightness ?? 0.4)
+        let topShade = 0.30 + 0.25 * (art?.upperBrightness ?? 0.4)
+        let coverTop = layout.drop / max(height, 1)
+        let coverSpan = width / max(height, 1)
+        let coverBottom = min(layout.coverBottom / max(height, 1), 0.74)
+
+        ZStack(alignment: .top) {
+            HushStyle.paper
+
+            if let art {
+                // The cover's own edge colors carried on: its top color above it, its bottom color
+                // below it. They meet behind the cover, where it is fully opaque — so the cover
+                // fades into plain color at both ends, with nothing blurred or repeated.
                 LinearGradient(
-                    colors: [.black.opacity(0.18), .black.opacity(0.42), .black.opacity(0.72)],
+                    stops: [
+                        .init(color: art.topColor, location: 0),
+                        .init(color: art.topColor, location: coverTop + coverSpan * 0.19),
+                        .init(color: art.bottomColor, location: coverTop + coverSpan * 0.68),
+                        .init(color: art.bottomColor, location: 1)
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .id(artID)
+                .transition(.opacity)
             }
-            .animation(.easeInOut(duration: 0.6), value: backdropID)
+
+            // Shade that begins where the cover starts to dissolve and deepens toward the bottom.
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0), location: 0),
+                    .init(color: .black.opacity(0), location: max(coverBottom - 0.20, 0)),
+                    .init(color: .black.opacity(shade), location: coverBottom + 0.01),
+                    .init(color: .black.opacity(shade + 0.10), location: coverBottom + 0.22),
+                    .init(color: .black.opacity(shade + 0.22), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            cover
+                .frame(width: width, height: width)
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black.opacity(0.6), location: 0.09),
+                            .init(color: .black, location: 0.19),
+                            .init(color: .black, location: 0.68),
+                            .init(color: .black.opacity(0.55), location: 0.85),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .offset(y: layout.drop)
+
+            // Soft shade behind the status bar and the top buttons.
+            LinearGradient(colors: [.black.opacity(topShade), .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: layout.topInset + 100)
         }
+        .animation(.easeInOut(duration: 0.6), value: artID)
+        .frame(width: width, height: height, alignment: .top)
+        .clipped()
         .ignoresSafeArea()
-        .accessibilityHidden(true)
-        .task(id: item?.persistentID) {
-            guard let item, backdropID != item.persistentID else { return }
-            guard let image = await ArtworkPalette.loadBlurredBackdrop(for: item), !Task.isCancelled else { return }
-            backdrop = image
-            backdropID = item.persistentID
-        }
+    }
+}
+
+/// What the player draws around a song's cover: the cover's color along its top edge and along its
+/// bottom edge, and how bright each is (0 = black … 1 = white).
+final class PlayerArt {
+    let topColor: Color
+    let bottomColor: Color
+    let upperBrightness: CGFloat
+    let lowerBrightness: CGFloat
+
+    init(top: ArtworkPalette.RGB, bottom: ArtworkPalette.RGB) {
+        topColor = Color(red: top.red, green: top.green, blue: top.blue)
+        bottomColor = Color(red: bottom.red, green: bottom.green, blue: bottom.blue)
+        upperBrightness = top.brightness
+        lowerBrightness = bottom.brightness
     }
 }
 
@@ -532,6 +653,11 @@ enum ArtworkPalette {
     // Small (240 px) images, so plenty can be kept: going back to a page shows its glow instantly.
     private static let blurCache: NSCache<NSNumber, UIImage> = {
         let cache = NSCache<NSNumber, UIImage>()
+        cache.countLimit = 40
+        return cache
+    }()
+    private static let playerArtCache: NSCache<NSNumber, PlayerArt> = {
+        let cache = NSCache<NSNumber, PlayerArt>()
         cache.countLimit = 40
         return cache
     }()
@@ -578,6 +704,83 @@ enum ArtworkPalette {
             .cropped(to: input.extent)
         guard let cgImage = blurContext.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cgImage)
+    }
+
+    /// The player's backdrop for a song if it has been made before (instant).
+    static func cachedPlayerArt(for item: MPMediaItem?) -> PlayerArt? {
+        guard let item else { return nil }
+        return playerArtCache.object(forKey: NSNumber(value: item.persistentID))
+    }
+
+    /// Works out the player's colors without holding up the screen: the small cover is read on the
+    /// main thread (MediaPlayer needs that); the measuring runs in the background.
+    @MainActor
+    static func loadPlayerArt(for item: MPMediaItem) async -> PlayerArt? {
+        let key = NSNumber(value: item.persistentID)
+        if let cached = playerArtCache.object(forKey: key) { return cached }
+        guard let thumbnail = backdropImage(for: item) else { return nil }
+        let made = await Task.detached(priority: .userInitiated) {
+            ArtworkPalette.makePlayerArt(from: thumbnail)
+        }.value
+        if let made { playerArtCache.setObject(made, forKey: key) }
+        return made
+    }
+
+    /// A color as plain 0…1 numbers.
+    struct RGB {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        var brightness: CGFloat { 0.299 * red + 0.587 * green + 0.114 * blue }
+    }
+
+    /// Reads the cover's color along its top edge and along its bottom edge (a strip a tenth of the
+    /// cover high each), a touch more saturated so it stays lively once shaded.
+    static func makePlayerArt(from cover: UIImage) -> PlayerArt? {
+        guard let source = CIImage(image: cover) else { return nil }
+        let extent = source.extent
+        guard extent.width > 0, extent.height > 0, !extent.isInfinite else { return nil }
+        let input = source.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.3])
+        let strip = extent.height * 0.1
+        // Core Image counts from the bottom.
+        let top = dominantColor(of: input, in: CGRect(x: extent.minX, y: extent.maxY - strip, width: extent.width, height: strip))
+        let bottom = dominantColor(of: input, in: CGRect(x: extent.minX, y: extent.minY, width: extent.width, height: strip))
+        return PlayerArt(top: top, bottom: bottom)
+    }
+
+    /// The most common color in part of an image. A plain average turns a mixed edge (yellow, green
+    /// and blue side by side, say) into grey; this finds the biggest group of similar pixels and
+    /// averages only those.
+    private static func dominantColor(of image: CIImage, in region: CGRect) -> RGB {
+        // Shrink the strip to a few dozen pixels across: plenty to count colors.
+        let columns = 48
+        let scale = CGFloat(columns) / max(region.width, 1)
+        let rows = max(Int((region.height * scale).rounded()), 1)
+        let small = image
+            .transformed(by: CGAffineTransform(translationX: -region.minX, y: -region.minY))
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        var pixels = [UInt8](repeating: 0, count: columns * rows * 4)
+        blurContext.render(small, toBitmap: &pixels, rowBytes: columns * 4,
+                           bounds: CGRect(x: 0, y: 0, width: columns, height: rows),
+                           format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+        // Sort the pixels into 64 coarse color groups (4 levels each of red, green, blue).
+        var counts = [Int](repeating: 0, count: 64)
+        var reds = [Int](repeating: 0, count: 64)
+        var greens = [Int](repeating: 0, count: 64)
+        var blues = [Int](repeating: 0, count: 64)
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Int(pixels[index]), green = Int(pixels[index + 1]), blue = Int(pixels[index + 2])
+            let group = (red >> 6) << 4 | (green >> 6) << 2 | (blue >> 6)
+            counts[group] += 1
+            reds[group] += red
+            greens[group] += green
+            blues[group] += blue
+        }
+        guard let biggest = counts.indices.max(by: { counts[$0] < counts[$1] }), counts[biggest] > 0 else {
+            return RGB(red: 0, green: 0, blue: 0)
+        }
+        let total = CGFloat(counts[biggest]) * 255
+        return RGB(red: CGFloat(reds[biggest]) / total, green: CGFloat(greens[biggest]) / total, blue: CGFloat(blues[biggest]) / total)
     }
 
     /// Small render of the art: plenty for a blurred backdrop and color sampling.

@@ -9,6 +9,7 @@ private enum LibraryTab: String, CaseIterable {
     case songs = "Songs"
     case playlists = "Playlists"
     case artists = "Artists"
+    case videos = "Videos"
 }
 
 private enum LibrarySort: String, CaseIterable {
@@ -434,6 +435,11 @@ struct ContentView: View {
     @State private var visibleArtists: [MusicArtist] = []
     @State private var visibleArtistIDs: [String] = []
     @State private var visibleArtistLetters: [String] = []
+    @State private var visibleVideos: [LibraryVideo] = []
+    @State private var visibleVideoIDs: [UInt64] = []
+    @State private var visibleVideoLetters: [String] = []
+    /// Title of a tapped video that can't be played here (not on this iPhone); shows a short note.
+    @State private var unavailableVideoTitle: String?
 
     private func rebuildVisibleLibrary() {
         let query = LibrarySearch.normalizedQuery(searchText)
@@ -457,6 +463,14 @@ struct ContentView: View {
         visibleSongs = songs
         visibleSongIDs = songIDs
         visibleSongLetters = sort == .alphabetical ? songIDs.map { songInfo[$0]?.sectionLetter ?? "#" } : []
+        var videos = library.videos.filter { LibrarySearch.matches($0.searchKey, query: query) }
+        if sort == .mostPlayed {
+            videos = Self.sortedByPlayCount(videos) { $0.item?.playCount ?? 0 }
+        }
+        visibleVideos = videos
+        visibleVideoIDs = videos.map(\.id)
+        visibleVideoLetters = sort == .alphabetical ? videos.map(\.sectionLetter) : []
+
         var artists = LibrarySearch.filterByNameThenSongs(
             library.artists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
         )
@@ -537,6 +551,18 @@ struct ContentView: View {
                     }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .alert(
+                "This video isn't on your iPhone",
+                isPresented: Binding(
+                    get: { unavailableVideoTitle != nil },
+                    set: { if !$0 { unavailableVideoTitle = nil } }
+                ),
+                presenting: unavailableVideoTitle
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { title in
+                Text("“\(title)” is still in the cloud or is copy-protected. Download it in the Music app, then pull down here to refresh.")
+            }
             .task { library.requestAccess() }
             .onAppear(perform: rebuildVisibleLibrary)
             .onChange(of: searchText) { rebuildVisibleLibrary() }
@@ -723,6 +749,17 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("About Hush")
             Spacer()
+            // How many are showing, on its own small glass so it reads over artwork too.
+            Text(tabCount)
+                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(HushStyle.ink.opacity(0.92))
+                .padding(.horizontal, 12)
+                .frame(minWidth: 44)
+                .frame(height: 38)
+                .hushHeaderGlass(Capsule())
+                // The glass itself never animates.
+                .animation(nil, value: selectedTab)
+                .accessibilityLabel("\(tabCount) \(selectedTab.rawValue.lowercased())")
             if selectedTab == .playlists || selectedTab == .albums {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -825,6 +862,7 @@ struct ContentView: View {
         case .artists: return "Find an artist or song"
         case .songs: return "Find a song, artist or album"
         case .playlists: return "Find a playlist or song"
+        case .videos: return "Find a video"
         }
     }
 
@@ -843,7 +881,11 @@ struct ContentView: View {
                         Text(tab.rawValue)
                             .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
                             .foregroundStyle(selectedTab == tab ? HushStyle.paper : HushStyle.ink.opacity(0.92))
-                            .padding(.horizontal, 11)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.horizontal, 4)
+                            // Five tabs share the full width equally (the count sits in the title row).
+                            .frame(maxWidth: .infinity)
                             .frame(height: 32)
                             .background {
                                 if selectedTab == tab {
@@ -861,20 +903,6 @@ struct ContentView: View {
             .padding(3)
             // Static glass track; only the gold pill on top of it moves.
             .hushHeaderGlass(Capsule())
-
-            Spacer(minLength: 8)
-
-            // How many are showing, on its own small glass so it reads over artwork too.
-            Text(tabCount)
-                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(HushStyle.ink.opacity(0.92))
-                .padding(.horizontal, 12)
-                .frame(minWidth: 44)
-                .frame(height: 38)
-                .hushHeaderGlass(Capsule())
-                // The glass itself never animates (only the gold pill does).
-                .animation(nil, value: selectedTab)
-                .accessibilityLabel("\(tabCount) \(selectedTab.rawValue.lowercased())")
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 10)
@@ -888,6 +916,7 @@ struct ContentView: View {
         case .artists: return "\(visibleArtists.count)"
         case .songs: return "\(visibleSongs.count)"
         case .playlists: return "\(visiblePlaylists.count)"
+        case .videos: return "\(visibleVideos.count)"
         }
     }
 
@@ -920,6 +949,9 @@ struct ContentView: View {
                 artistsPage
                     .underLibraryHeader()
                     .tag(LibraryTab.artists)
+                videosPage
+                    .underLibraryHeader()
+                    .tag(LibraryTab.videos)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             // A paging TabView clips its pages to its own frame. Stretch it up to the top of the
@@ -1045,6 +1077,80 @@ struct ContentView: View {
         } label: {
             Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
         }
+    }
+
+    /// Music videos from the Music app. Tap one to watch it full screen.
+    @ViewBuilder
+    private var videosPage: some View {
+        if visibleVideos.isEmpty {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 12) {
+                    Image(systemName: searchText.isEmpty ? "play.rectangle" : "magnifyingglass")
+                        .font(.system(size: 31, weight: .light))
+                        .foregroundStyle(HushStyle.gold.opacity(0.85))
+                    Text(searchText.isEmpty ? "No videos yet" : "No videos found")
+                        .font(.system(size: 21, weight: .regular, design: .serif))
+                        .foregroundStyle(HushStyle.ink)
+                    Text(searchText.isEmpty
+                         ? "Music videos in the Music app appear here once they're on this iPhone. Pull down to check again."
+                         : "Try another video name.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(HushStyle.muted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 290)
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity, minHeight: 250)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await library.refreshLibrary() }
+        } else {
+            videoGrid
+        }
+    }
+
+    private var videoGrid: some View {
+        FastScrollContainer(
+            itemIDs: visibleVideoIDs,
+            itemLetters: visibleVideoLetters,
+            isAlphabetical: sort == .alphabetical,
+            itemsPerRow: 2,
+            estimatedRowHeight: 170,
+            estimatedPadding: 36,
+            onRefresh: { await library.refreshLibrary() },
+            scrollToTopSignal: scrollToTop.signal(for: .videos)
+        ) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2),
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(visibleVideos) { video in
+                    Button {
+                        play(video)
+                    } label: {
+                        VideoTile(video: video)
+                    }
+                    .buttonStyle(TilePressStyle())
+                    .underHeaderBlur()
+                    .id(video.id)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// Stops the music and opens the video full screen; says why when it can't be played here.
+    private func play(_ video: LibraryVideo) {
+        guard video.assetURL != nil else {
+            unavailableVideoTitle = video.title
+            return
+        }
+        Haptics.play()
+        library.pauseForVideo()
+        VideoPlayback.present(video)
     }
 
     @ViewBuilder

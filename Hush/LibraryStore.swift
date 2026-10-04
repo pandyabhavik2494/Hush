@@ -149,6 +149,21 @@ enum ArtistCredits {
     }
 }
 
+/// A music video kept in the Music app.
+struct LibraryVideo: Identifiable {
+    let id: UInt64
+    let title: String
+    /// Nil when the video has no artist (or only "Unknown Artist").
+    let artist: String?
+    let duration: TimeInterval
+    /// The file on this iPhone. Nil when the video is only in the cloud, or is copy-protected.
+    let assetURL: URL?
+    /// The library entry it came from (nil only in previews).
+    let item: MPMediaItem?
+    let searchKey: String
+    let sectionLetter: String
+}
+
 /// Precomputed per-song data used by search and the A–Z index.
 struct SongInfo {
     let searchKey: String
@@ -220,13 +235,15 @@ private struct LibrarySnapshot: @unchecked Sendable {
     var albums: [MusicAlbum] = []
     var playlists: [MusicPlaylist] = []
     var artists: [MusicArtist] = []
+    var videos: [LibraryVideo] = []
     /// Fingerprint of what the UI shows (songs, albums, playlists and their contents). iOS reports
     /// "library changed" even for play-count updates; if this is unchanged, nothing is redrawn.
     var signature = 0
 
     static func load() -> LibrarySnapshot {
         var snapshot = LibrarySnapshot()
-        let items = MPMediaQuery.songs().items ?? []
+        // Videos belong only in the Videos tab, so they are kept out of songs, albums, artists and playlists.
+        let items = (MPMediaQuery.songs().items ?? []).filter { !$0.isVideo }
         var titled: [(item: MPMediaItem, title: String)] = []
         titled.reserveCapacity(items.count)
         snapshot.songInfo.reserveCapacity(items.count)
@@ -245,8 +262,8 @@ private struct LibrarySnapshot: @unchecked Sendable {
 
         let collections = MPMediaQuery.albums().collections ?? []
         var albums: [MusicAlbum] = collections.compactMap { collection in
-            let tracks = collection.items.sorted(by: Self.trackOrder)
-            guard let first = collection.representativeItem ?? tracks.first else { return nil }
+            let tracks = collection.items.filter { !$0.isVideo }.sorted(by: Self.trackOrder)
+            guard let first = tracks.first else { return nil }
             let title = first.albumTitle ?? "Unknown Album"
             let artist = first.albumArtist ?? first.artist ?? "Unknown Artist"
             let albumID = first.albumPersistentID
@@ -265,8 +282,41 @@ private struct LibrarySnapshot: @unchecked Sendable {
         snapshot.albums = albums
         snapshot.playlists = Self.loadPlaylists()
         snapshot.artists = Self.buildArtists(from: albums)
+        snapshot.videos = Self.loadVideos()
         snapshot.signature = Self.signature(of: snapshot)
         return snapshot
+    }
+
+    /// Music videos (and home videos) kept in the Music app, A–Z. The songs, albums and playlists
+    /// above filter videos out, so they only ever show up here.
+    private static func loadVideos() -> [LibraryVideo] {
+        var seen = Set<UInt64>()
+        var videos: [LibraryVideo] = []
+        for type in [MPMediaType.musicVideo, MPMediaType.homeVideo] {
+            let query = MPMediaQuery()
+            query.addFilterPredicate(
+                MPMediaPropertyPredicate(value: type.rawValue, forProperty: MPMediaItemPropertyMediaType)
+            )
+            for item in query.items ?? [] where seen.insert(item.persistentID).inserted {
+                let rawTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = rawTitle.isEmpty ? "Untitled Video" : rawTitle
+                let rawArtist = (item.artist ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let artist = rawArtist.isEmpty || rawArtist.caseInsensitiveCompare("Unknown Artist") == .orderedSame
+                    ? nil : rawArtist
+                videos.append(LibraryVideo(
+                    id: item.persistentID,
+                    title: title,
+                    artist: artist,
+                    duration: item.playbackDuration,
+                    assetURL: item.assetURL,
+                    item: item,
+                    searchKey: LibrarySearch.key([title, artist]),
+                    sectionLetter: LibraryAlphabet.section(for: title)
+                ))
+            }
+        }
+        videos.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        return videos
     }
 
     private static func signature(of snapshot: LibrarySnapshot) -> Int {
@@ -282,6 +332,12 @@ private struct LibrarySnapshot: @unchecked Sendable {
             hasher.combine(playlist.id)
             hasher.combine(playlist.name)
             for item in playlist.items { hasher.combine(item.persistentID) }
+        }
+        for video in snapshot.videos {
+            hasher.combine(video.id)
+            hasher.combine(video.title)
+            // A video that has just finished downloading becomes playable: redraw for that too.
+            hasher.combine(video.assetURL != nil)
         }
         return hasher.finalize()
     }
@@ -355,13 +411,14 @@ private struct LibrarySnapshot: @unchecked Sendable {
             // Folders show up as playlists containing every child playlist's songs; skip them.
             if (playlist.value(forProperty: "isFolder") as? NSNumber)?.boolValue == true { return nil }
             let name = playlist.name ?? "Untitled Playlist"
+            let songs = playlist.items.filter { !$0.isVideo }
             return MusicPlaylist(
                 id: playlist.persistentID,
                 name: name,
-                items: playlist.items,
-                artworkItems: Self.coverItems(from: playlist.items),
+                items: songs,
+                artworkItems: Self.coverItems(from: songs),
                 searchKey: LibrarySearch.key([name]),
-                songSearchKey: LibrarySearch.songsKey(playlist.items),
+                songSearchKey: LibrarySearch.songsKey(songs),
                 sectionLetter: LibraryAlphabet.section(for: name)
             )
         }
@@ -502,6 +559,8 @@ final class MusicLibraryStore: ObservableObject {
     @Published private(set) var playlists: [MusicPlaylist] = []
     /// One entry per artist, sorted A–Z.
     @Published private(set) var artists: [MusicArtist] = []
+    /// Music videos from the Music app, A–Z.
+    @Published private(set) var videos: [LibraryVideo] = []
     /// Artists you've marked as favorites (their normalized ids), remembered between launches.
     @Published private(set) var favoriteArtistIDs: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "hush.favoriteArtists") ?? [])
@@ -730,6 +789,7 @@ final class MusicLibraryStore: ObservableObject {
         albums = snapshot.albums
         playlists = snapshot.playlists
         artists = snapshot.artists
+        videos = snapshot.videos
         // Start fetching artist photos now, in the background, so the Artists tab is ready.
         let photoRequests = snapshot.artists.map { (key: $0.id, name: $0.name) }
         Task.detached(priority: .utility) {
@@ -899,6 +959,15 @@ final class MusicLibraryStore: ObservableObject {
         player.nowPlayingItem = item
         syncPlayback()
         startPlaybackWhenAudioSessionIsReady()
+    }
+
+    /// Stops the music before a video starts, so the two never play over each other.
+    func pauseForVideo() {
+        guard isPlaying else { return }
+        isPlaying = false
+        expect(isPlaying: false)
+        playbackStartGeneration += 1
+        player.pause()
     }
 
     func togglePlayback() {
@@ -1469,4 +1538,9 @@ final class MusicLibraryStore: ObservableObject {
             }
         }
     }
+}
+
+extension MPMediaItem {
+    /// True for music videos, home videos and any other video entry in the library.
+    var isVideo: Bool { !mediaType.intersection(.anyVideo).isEmpty }
 }
