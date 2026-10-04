@@ -368,3 +368,202 @@ final class HushAppDelegate: NSObject, UIApplicationDelegate {
         }
     }
 }
+
+// MARK: - Apple TV purchases
+
+/// Opens the TV app, where Apple TV purchases play. (iOS doesn't let other apps open a specific
+/// library item there.)
+@MainActor
+enum AppleTVHandOff {
+    static func open(_ title: String, toast: (String) -> Void) {
+        Haptics.tap()
+        toast("Opening \(title) in the TV app")
+        guard let url = URL(string: "videos://") else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
+/// A purchase's artwork, 16:9 (movie key art or an episode still).
+struct PurchaseArtwork: View {
+    let item: MPMediaItem?
+    var cornerRadius: CGFloat = 8
+    var symbol = "tv"
+    @State private var image: UIImage?
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        LinearGradient(
+                            colors: [Color(red: 0.53, green: 0.39, blue: 0.15), Color(red: 0.20, green: 0.16, blue: 0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        Image(systemName: symbol)
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .task(id: item?.persistentID) {
+                // MediaPlayer hands out artwork reliably only on the main thread; decode off it.
+                guard let raw = item?.artwork?.image(at: CGSize(width: 640, height: 360)) else { return }
+                image = await raw.byPreparingForDisplay() ?? raw
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// An Apple TV movie: 16:9 key art; the title only when titles are on.
+struct AppleTVMovieTile: View {
+    let movie: LibraryVideo
+    let showsTitle: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PurchaseArtwork(item: movie.item, cornerRadius: 8, symbol: "appletv")
+            if showsTitle {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(movie.title)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(HushStyle.ink)
+                        .lineLimit(1)
+                    Text([movie.year.map(String.init), movie.genre].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 11.5, design: .rounded))
+                        .foregroundStyle(HushStyle.muted)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(movie.title), opens in the TV app")
+    }
+}
+
+/// An Apple TV show: its first episode's still with the name over a dark fade.
+struct AppleTVShowTile: View {
+    let show: AppleTVShowItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PurchaseArtwork(item: show.artworkItem, cornerRadius: 10)
+                .overlay(alignment: .bottomLeading) {
+                    Text(show.name)
+                        .font(.system(size: 19, weight: .regular, design: .serif))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LinearGradient(colors: [.black.opacity(0.72), .clear], startPoint: .bottom, endPoint: .top))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(show.episodesText)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(HushStyle.muted)
+                .padding(.horizontal, 2)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(show.name), \(show.episodesText)")
+    }
+}
+
+/// A show page: a wide still, the name, seasons and episodes, Open in the TV app, season filters
+/// and the episodes (each opens the TV app).
+struct AppleTVShowPage: View {
+    let show: AppleTVShowItem
+    let toast: (String) -> Void
+    @State private var season: Int?
+
+    var body: some View {
+        let seasons = show.seasons
+        let current = season.flatMap { seasons.contains($0) ? $0 : nil } ?? seasons.first ?? 1
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                PurchaseArtwork(item: show.artworkItem, cornerRadius: 14)
+                    .shadow(color: .black.opacity(0.5), radius: 20, y: 14)
+                Text(show.name)
+                    .font(.system(size: 30, weight: .regular, design: .serif))
+                    .foregroundStyle(HushStyle.ink)
+                    .padding(.top, 6)
+                Text("\(show.seasonsText) · \(show.episodesText)")
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(HushStyle.muted)
+                Button {
+                    AppleTVHandOff.open(show.name, toast: toast)
+                } label: {
+                    Label("Open in the TV app", systemImage: "arrow.up.forward.app")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(HushStyle.paper)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(HushStyle.gold, in: Capsule())
+                }
+                .buttonStyle(PopButtonStyle())
+                if seasons.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(seasons, id: \.self) { number in
+                                Button {
+                                    Haptics.tap()
+                                    withAnimation(.snappy(duration: 0.25)) { season = number }
+                                } label: {
+                                    Text("Season \(number)")
+                                        .font(.system(size: 13, weight: number == current ? .semibold : .medium, design: .rounded))
+                                        .foregroundStyle(number == current ? HushStyle.paper : HushStyle.ink.opacity(0.9))
+                                        .padding(.horizontal, 14)
+                                        .frame(height: 32)
+                                        .background(number == current ? HushStyle.gold : HushStyle.surface, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .scrollClipDisabled()
+                    .padding(.top, 6)
+                }
+                LazyVStack(spacing: 0) {
+                    ForEach(show.episodes.filter { $0.season == current }) { episode in
+                        Button {
+                            AppleTVHandOff.open("\(show.name) S\(episode.season) E\(episode.number)", toast: toast)
+                        } label: {
+                            HStack(spacing: 12) {
+                                PurchaseArtwork(item: episode.item, cornerRadius: 6)
+                                    .frame(width: 112)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(episode.number > 0 ? "Episode \(episode.number)" : "Episode")
+                                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(HushStyle.muted)
+                                    Text(episode.title)
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(HushStyle.ink)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(HushStyle.durationText(episode.duration) ?? "")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .foregroundStyle(HushStyle.muted)
+                            }
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Season \(episode.season) episode \(episode.number), \(episode.title), opens in the TV app")
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+        .background(HushStyle.paper.ignoresSafeArea())
+        .navigationTitle(show.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

@@ -3,7 +3,8 @@ import MusicKit
 import SwiftUI
 import UIKit
 
-/// Tab order (left to right, and the swipe order): Albums, Songs, Playlists, Artists, Videos, Movies.
+/// Tab order (left to right, and the swipe order): Albums, Songs, Playlists, Artists, Videos,
+/// Movies, then Apple TV purchases: TV Movies and TV Shows.
 private enum LibraryTab: String, CaseIterable {
     case albums = "Albums"
     case songs = "Songs"
@@ -11,6 +12,8 @@ private enum LibraryTab: String, CaseIterable {
     case artists = "Artists"
     case videos = "Videos"
     case movies = "Movies"
+    case tvMovies = "TV Movies"
+    case tvShows = "TV Shows"
 }
 
 private enum LibrarySort: String, CaseIterable {
@@ -67,6 +70,7 @@ private enum HushRoute: Hashable {
     case album(UInt64)
     case playlist(UInt64)
     case artist(String)
+    case tvShow(String)
 
     init(_ source: PlaybackSource) {
         switch source {
@@ -349,10 +353,16 @@ struct ContentView: View {
     @AppStorage("hush.showGridTitles") private var showGridTitles = false
     /// The same for movie names under the posters. Off by default, remembered on its own.
     @AppStorage("hush.showMovieTitles") private var showMovieTitles = false
+    /// And for Apple TV movies (titles hidden by default).
+    @AppStorage("hush.showTVMovieTitles") private var showTVMovieTitles = false
 
-    /// The titles toggle in the header: movies have their own, albums and playlists share one.
+    /// The titles toggle in the header: movies and TV movies have their own, albums and playlists share one.
     private var gridTitles: Binding<Bool> {
-        selectedTab == .movies ? $showMovieTitles : $showGridTitles
+        switch selectedTab {
+        case .movies: return $showMovieTitles
+        case .tvMovies: return $showTVMovieTitles
+        default: return $showGridTitles
+        }
     }
 
     // Filtered + sorted lists are cached and rebuilt only when search, sort, or the library changes,
@@ -377,6 +387,10 @@ struct ContentView: View {
     @State private var movieGenres: [String] = []
     /// The genre the Movies tab is narrowed to; nil shows every movie.
     @State private var movieGenre: String?
+    @State private var visibleTVMovies: [LibraryVideo] = []
+    @State private var visibleTVShows: [AppleTVShowItem] = []
+    @State private var tvMovieGenres: [String] = []
+    @State private var tvMovieGenre: String?
     /// A tapped video or movie that can't be played here (not on this iPhone); shows a short note.
     @State private var unavailableVideo: LibraryVideo?
 
@@ -422,6 +436,14 @@ struct ContentView: View {
         visibleMovies = movies
         visibleMovieIDs = movies.map(\.id)
         visibleMovieLetters = sort == .alphabetical ? movies.map(\.sectionLetter) : []
+
+        tvMovieGenres = Array(Set(library.appleTVMovies.compactMap(\.genre)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        if let genre = tvMovieGenre, !tvMovieGenres.contains(genre) { tvMovieGenre = nil }
+        visibleTVMovies = library.appleTVMovies.filter { movie in
+            (tvMovieGenre == nil || movie.genre == tvMovieGenre) && LibrarySearch.matches(movie.searchKey, query: query)
+        }
+        visibleTVShows = library.appleTVShows.filter { LibrarySearch.matches($0.searchKey, query: query) }
 
         var artists = LibrarySearch.filterByNameThenSongs(
             library.artists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
@@ -523,6 +545,7 @@ struct ContentView: View {
             .onAppear(perform: rebuildVisibleLibrary)
             .onChange(of: searchText) { rebuildVisibleLibrary() }
             .onChange(of: movieGenre) { rebuildVisibleLibrary() }
+            .onChange(of: tvMovieGenre) { rebuildVisibleLibrary() }
             .onChange(of: sort) {
                 rebuildVisibleLibrary()
             }
@@ -577,6 +600,10 @@ struct ContentView: View {
                                     )
                                 }
                             )
+                        }
+                    case .tvShow(let showID):
+                        if let show = library.appleTVShows.first(where: { $0.id == showID }) {
+                            AppleTVShowPage(show: show) { library.queue.showToast($0) }
                         }
                     case .playlist(let playlistID):
                         if let playlist = library.playlists.first(where: { $0.id == playlistID }) {
@@ -717,7 +744,7 @@ struct ContentView: View {
                 // The glass itself never animates.
                 .animation(nil, value: selectedTab)
                 .accessibilityLabel("\(tabCount) \(selectedTab.rawValue.lowercased())")
-            if selectedTab == .playlists || selectedTab == .albums || selectedTab == .movies {
+            if selectedTab == .playlists || selectedTab == .albums || selectedTab == .movies || selectedTab == .tvMovies {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         gridTitles.wrappedValue.toggle()
@@ -735,7 +762,7 @@ struct ContentView: View {
                 .accessibilityValue(gridTitles.wrappedValue ? "On" : "Off")
             }
             // Playlists are listed A–Z like the Music app; sorting only applies to Albums and Songs.
-            if selectedTab != .playlists {
+            if selectedTab != .playlists, selectedTab != .tvMovies, selectedTab != .tvShows {
                 Menu {
                     Picker("Sort", selection: currentSort) {
                         ForEach(LibrarySort.options(for: selectedTab), id: \.self) { option in
@@ -821,46 +848,57 @@ struct ContentView: View {
         case .playlists: return "Find a playlist or song"
         case .videos: return "Find a video"
         case .movies: return "Find a movie or genre"
+        case .tvMovies: return "Find a movie or genre"
+        case .tvShows: return "Find a show or episode"
         }
     }
 
     private var tabPicker: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 2) {
-                ForEach(LibraryTab.allCases, id: \.self) { tab in
-                    Button {
-                        if selectedTab == tab {
-                            // Already here: back to the top, like tapping a tab in Apple's apps.
-                            scrollToTop = ScrollToTopRequest(tab: tab, count: scrollToTop.count + 1)
-                        } else {
-                            withAnimation(.snappy(duration: 0.3)) { selectedTab = tab }
-                        }
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
-                            .foregroundStyle(selectedTab == tab ? HushStyle.paper : HushStyle.ink.opacity(0.92))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .padding(.horizontal, 3)
-                            // Six tabs share the full width equally (the count sits in the title row).
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 32)
-                            .background {
-                                if selectedTab == tab {
-                                    Capsule()
-                                        .fill(HushStyle.gold)
-                                        .matchedGeometryEffect(id: "tab-selection", in: tabNamespace)
-                                }
+        // Eight tabs don't fit across the phone, so the strip scrolls sideways; each tab is as wide as
+        // its label and the selected one is kept in view.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(LibraryTab.allCases, id: \.self) { tab in
+                        Button {
+                            if selectedTab == tab {
+                                // Already here: back to the top, like tapping a tab in Apple's apps.
+                                scrollToTop = ScrollToTopRequest(tab: tab, count: scrollToTop.count + 1)
+                            } else {
+                                withAnimation(.snappy(duration: 0.3)) { selectedTab = tab }
                             }
-                            .contentShape(Capsule())
+                        } label: {
+                            Text(tab.rawValue)
+                                .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
+                                .foregroundStyle(selectedTab == tab ? HushStyle.paper : HushStyle.ink.opacity(0.92))
+                                .lineLimit(1)
+                                .fixedSize()
+                                .padding(.horizontal, 13)
+                                .frame(height: 32)
+                                .background {
+                                    if selectedTab == tab {
+                                        Capsule()
+                                            .fill(HushStyle.gold)
+                                            .matchedGeometryEffect(id: "tab-selection", in: tabNamespace)
+                                    }
+                                }
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .id(tab)
+                        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                 }
+                .padding(3)
             }
-            .padding(3)
+            .scrollClipDisabled(false)
             // Static glass track; only the gold pill on top of it moves.
             .hushHeaderGlass(Capsule())
+            .clipShape(Capsule())
+            .onChange(of: selectedTab) { _, tab in
+                withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(tab, anchor: .center) }
+            }
+            .onAppear { proxy.scrollTo(selectedTab, anchor: .center) }
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 10)
@@ -876,6 +914,8 @@ struct ContentView: View {
         case .playlists: return "\(visiblePlaylists.count)"
         case .videos: return "\(visibleVideos.count)"
         case .movies: return "\(visibleMovies.count)"
+        case .tvMovies: return "\(visibleTVMovies.count)"
+        case .tvShows: return "\(visibleTVShows.count)"
         }
     }
 
@@ -914,6 +954,12 @@ struct ContentView: View {
                 moviesPage
                     .underLibraryHeader()
                     .tag(LibraryTab.movies)
+                tvMoviesPage
+                    .underLibraryHeader()
+                    .tag(LibraryTab.tvMovies)
+                tvShowsPage
+                    .underLibraryHeader()
+                    .tag(LibraryTab.tvShows)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             // A paging TabView clips its pages to its own frame. Stretch it up to the top of the
@@ -1103,6 +1149,125 @@ struct ContentView: View {
             .padding(.top, 20)
             .padding(.bottom, 16)
         }
+    }
+
+    /// Movies bought on Apple TV: 16:9 key art in two columns; a tap opens the TV app.
+    @ViewBuilder
+    private var tvMoviesPage: some View {
+        if visibleTVMovies.isEmpty {
+            purchasesEmptyMessage(
+                symbol: "appletv",
+                searching: !searchText.isEmpty || tvMovieGenre != nil,
+                nothingTitle: "No Apple TV movies here",
+                found: "No movies found"
+            )
+        } else {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if !tvMovieGenres.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                genrePill("All", isSelected: tvMovieGenre == nil) { tvMovieGenre = nil }
+                                ForEach(tvMovieGenres, id: \.self) { genre in
+                                    genrePill(genre, isSelected: tvMovieGenre == genre) {
+                                        tvMovieGenre = tvMovieGenre == genre ? nil : genre
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                        }
+                        .scrollClipDisabled()
+                    }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), alignment: .leading,
+                              spacing: showTVMovieTitles ? 16 : 8) {
+                        ForEach(visibleTVMovies) { movie in
+                            Button {
+                                AppleTVHandOff.open(movie.title) { library.queue.showToast($0) }
+                            } label: {
+                                AppleTVMovieTile(movie: movie, showsTitle: showTVMovieTitles)
+                            }
+                            .buttonStyle(TilePressStyle())
+                            .underHeaderBlur()
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                }
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await library.refreshLibrary() }
+        }
+    }
+
+    /// Shows bought on Apple TV: one tile per series; a tap opens the show's page.
+    @ViewBuilder
+    private var tvShowsPage: some View {
+        if visibleTVShows.isEmpty {
+            purchasesEmptyMessage(
+                symbol: "tv",
+                searching: !searchText.isEmpty,
+                nothingTitle: "No Apple TV shows here",
+                found: "No shows found"
+            )
+        } else {
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), alignment: .leading, spacing: 16) {
+                    ForEach(visibleTVShows) { series in
+                        Button {
+                            show(.tvShow(series.id))
+                        } label: {
+                            AppleTVShowTile(show: series)
+                        }
+                        .buttonStyle(TilePressStyle())
+                        .underHeaderBlur()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await library.refreshLibrary() }
+        }
+    }
+
+    /// When the phone shows Hush no Apple TV purchases (iOS keeps the TV app's library to itself).
+    private func purchasesEmptyMessage(symbol: String, searching: Bool, nothingTitle: String, found: String) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 12) {
+                Image(systemName: searching ? "magnifyingglass" : symbol)
+                    .font(.system(size: 31, weight: .light))
+                    .foregroundStyle(HushStyle.gold.opacity(0.85))
+                Text(searching ? found : nothingTitle)
+                    .font(.system(size: 21, weight: .regular, design: .serif))
+                    .foregroundStyle(HushStyle.ink)
+                Text(searching
+                     ? "Try another name."
+                     : "Apple TV purchases aren't visible to Hush on this iPhone. Watch them in the TV app; on the Mac, Hush shows them all.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(HushStyle.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 290)
+                if !searching {
+                    Button {
+                        AppleTVHandOff.open("your purchases") { library.queue.showToast($0) }
+                    } label: {
+                        Text("Open the TV app")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(HushStyle.paper)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 11)
+                            .background(HushStyle.gold, in: Capsule())
+                    }
+                    .buttonStyle(PopButtonStyle())
+                    .padding(.top, 4)
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, minHeight: 300)
+        }
+        .refreshable { await library.refreshLibrary() }
     }
 
     /// Movies from the phone's library, as posters, with a genre filter on top. Tap one to watch it

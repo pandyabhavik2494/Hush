@@ -103,14 +103,8 @@ enum AppleTVLibrary {
         return shows.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// "Friends: The Complete Series" → "Friends"; "Young Sheldon, Season 7" → "Young Sheldon".
     static func showName(series: String?, album: String?) -> String {
-        let raw = LibraryLoader.nonEmpty(series) ?? LibraryLoader.nonEmpty(album) ?? "TV Show"
-        let cleaned = raw
-            .replacingOccurrences(of: #"[:,]?\s*(The\s+)?Complete\s+Series$"#, with: "", options: [.regularExpression, .caseInsensitive])
-            .replacingOccurrences(of: #",?\s*Season\s+\d+$"#, with: "", options: [.regularExpression, .caseInsensitive])
-            .trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? raw : cleaned
+        AppleTVPurchases.showName(LibraryLoader.nonEmpty(series) ?? LibraryLoader.nonEmpty(album) ?? "TV Show")
     }
 
     /// Season and episode from "Season 1, Episode 19: The One Where…", else from the season name and
@@ -119,11 +113,10 @@ enum AppleTVLibrary {
         let rawTitle: String = item.title
         let title = LibraryLoader.nonEmpty(rawTitle) ?? "Episode"
         let duration = TimeInterval(item.totalTime) / 1000
-        if let match = title.firstMatch(of: #/^Season\s+(\d+),\s*Episode\s+(\d+)\s*[:\-–]\s*(.+)$/#) {
-            return AppleTVEpisode(id: id, title: String(match.3), season: Int(match.1) ?? 1, number: Int(match.2) ?? 0, duration: duration)
+        if let parsed = AppleTVPurchases.parseEpisodeTitle(title) {
+            return AppleTVEpisode(id: id, title: parsed.title, season: parsed.season, number: parsed.number, duration: duration)
         }
-        var season = Int(item.videoInfo?.season ?? 0)
-        if let album, let match = album.firstMatch(of: #/Season\s+(\d+)/#) { season = Int(match.1) ?? season }
+        let season = AppleTVPurchases.seasonNumber(in: album) ?? Int(item.videoInfo?.season ?? 0)
         let order = Int(item.videoInfo?.episodeOrder ?? 0)
         let number = order > 0 ? order : Int(item.trackNumber)
         return AppleTVEpisode(id: id, title: title, season: max(season, 1), number: number, duration: duration)
