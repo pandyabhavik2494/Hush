@@ -14,7 +14,6 @@ final class VideoEnhancer {
     let device: MTLDevice
     let queue: MTLCommandQueue
     private let convert: MTLComputePipelineState
-    private let sharpen: MTLComputePipelineState
     private let blit: MTLRenderPipelineState
     private var textureCache: CVMetalTextureCache?
     private var scaler: (any MTLFXSpatialScaler)?
@@ -22,7 +21,6 @@ final class VideoEnhancer {
     private var scalerFailedKey: (Int, Int, Int, Int)?
     private var rgb: MTLTexture?
     private var upscaled: MTLTexture?
-    private var sharpened: MTLTexture?
     private let sampler: MTLSamplerState
 
     /// 0…1. Kept subtle.
@@ -34,11 +32,9 @@ final class VideoEnhancer {
         do {
             let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
             guard let convertFunction = library.makeFunction(name: "hushYCbCrToRGB"),
-                  let sharpenFunction = library.makeFunction(name: "hushSharpen"),
                   let vertex = library.makeFunction(name: "hushBlitVertex"),
                   let fragment = library.makeFunction(name: "hushBlitFragment") else { return nil }
             convert = try device.makeComputePipelineState(function: convertFunction)
-            sharpen = try device.makeComputePipelineState(function: sharpenFunction)
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction = vertex
             descriptor.fragmentFunction = fragment
@@ -70,83 +66,106 @@ final class VideoEnhancer {
     ]
 
     /// Draws `source` into `target`, filling `displayRect` (in the target's pixels; it may reach past
-    /// the target's edges for Fill and Zoom). Returns false if it couldn't (the caller falls back).
+    /// the target's edges for Fill and Zoom). Only the visible part of the picture is processed.
+    /// Returns false if it couldn't (the caller falls back to the plain picture).
     @discardableResult
     func encode(source: CVPixelBuffer, into target: MTLTexture, displayRect: CGRect, enhance: Bool,
                 commandBuffer: MTLCommandBuffer) -> Bool {
         let width = CVPixelBufferGetWidth(source)
         let height = CVPixelBufferGetHeight(source)
+        let bounds = CGRect(x: 0, y: 0, width: target.width, height: target.height)
         guard width > 0, height > 0, displayRect.width > 0, displayRect.height > 0,
               let luma = texture(source, plane: 0, format: .r8Unorm),
-              let chroma = texture(source, plane: 1, format: .rg8Unorm),
-              let rgb = reusable(&self.rgb, width: width, height: height, usage: [.shaderRead, .shaderWrite]),
+              let chroma = texture(source, plane: 1, format: .rg8Unorm) else { return false }
+
+        // The visible part of the picture, in source pixels (whole pixels, so a little generous).
+        let visible = displayRect.intersection(bounds)
+        let perSourceX = displayRect.width / CGFloat(width)
+        let perSourceY = displayRect.height / CGFloat(height)
+        var crop = (x: 0, y: 0, width: width, height: height)
+        if !visible.isNull {
+            let x0 = max(Int(((visible.minX - displayRect.minX) / perSourceX).rounded(.down)), 0)
+            let y0 = max(Int(((visible.minY - displayRect.minY) / perSourceY).rounded(.down)), 0)
+            let x1 = min(Int(((visible.maxX - displayRect.minX) / perSourceX).rounded(.up)), width)
+            let y1 = min(Int(((visible.maxY - displayRect.minY) / perSourceY).rounded(.up)), height)
+            if x1 > x0, y1 > y0 { crop = (x0, y0, x1 - x0, y1 - y0) }
+        }
+        // Where that crop lands on screen.
+        let cropRect = CGRect(x: displayRect.minX + CGFloat(crop.x) * perSourceX,
+                              y: displayRect.minY + CGFloat(crop.y) * perSourceY,
+                              width: CGFloat(crop.width) * perSourceX,
+                              height: CGFloat(crop.height) * perSourceY)
+        let outputWidth = Int(cropRect.width.rounded())
+        let outputHeight = Int(cropRect.height.rounded())
+        let enlarging = outputWidth > Int(Double(crop.width) * 1.02) && outputHeight > Int(Double(crop.height) * 1.02)
+
+        guard let rgb = reusable(&self.rgb, width: crop.width, height: crop.height, usage: [.shaderRead, .shaderWrite]),
               let compute = commandBuffer.makeComputeCommandEncoder() else { return false }
 
-        // 1. YCbCr (video range) → RGB, with the frame's own colour matrix.
+        // 1. YCbCr (video range) → RGB for the visible crop, with the frame's own colour matrix.
         var coefficients = Self.coefficients(for: source)
+        var origin = SIMD2<UInt32>(UInt32(crop.x), UInt32(crop.y))
         compute.setComputePipelineState(convert)
         compute.setTexture(luma, index: 0)
         compute.setTexture(chroma, index: 1)
         compute.setTexture(rgb, index: 2)
         compute.setBytes(&coefficients, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        compute.setBytes(&origin, length: MemoryLayout<SIMD2<UInt32>>.size, index: 1)
         compute.setSamplerState(sampler, index: 0)
-        dispatch(compute, width: width, height: height)
+        dispatch(compute, width: crop.width, height: crop.height)
         compute.endEncoding()
 
+        // 2. Upscale to the size it's shown at (only when it's actually being enlarged).
         var shown = rgb
-        let outputWidth = Int(displayRect.width.rounded())
-        let outputHeight = Int(displayRect.height.rounded())
-        // 2. Upscale to the size it's shown at, then sharpen — only when it's actually being enlarged.
-        if enhance, outputWidth > Int(Double(width) * 1.02), outputHeight > Int(Double(height) * 1.02),
-           let scaler = scaler(inputWidth: width, inputHeight: height, outputWidth: outputWidth, outputHeight: outputHeight),
-           let upscaled = reusable(&self.upscaled, width: outputWidth, height: outputHeight, usage: scaler.outputTextureUsage.union([.shaderRead, .shaderWrite]), storage: .private),
-           let sharpened = reusable(&self.sharpened, width: outputWidth, height: outputHeight, usage: [.shaderRead, .shaderWrite], storage: .private) {
+        var sharpenAmount: Float = 0
+        if enhance, enlarging,
+           let scaler = scaler(inputWidth: crop.width, inputHeight: crop.height, outputWidth: outputWidth, outputHeight: outputHeight),
+           let upscaled = reusable(&self.upscaled, width: outputWidth, height: outputHeight, usage: scaler.outputTextureUsage.union([.shaderRead]), storage: .private) {
             scaler.colorTexture = rgb
             scaler.outputTexture = upscaled
-            scaler.inputContentWidth = width
-            scaler.inputContentHeight = height
+            scaler.inputContentWidth = crop.width
+            scaler.inputContentHeight = crop.height
             scaler.encode(commandBuffer: commandBuffer)
-            if let pass = commandBuffer.makeComputeCommandEncoder() {
-                var amount = sharpness
-                pass.setComputePipelineState(sharpen)
-                pass.setTexture(upscaled, index: 0)
-                pass.setTexture(sharpened, index: 1)
-                pass.setBytes(&amount, length: MemoryLayout<Float>.size, index: 0)
-                dispatch(pass, width: outputWidth, height: outputHeight)
-                pass.endEncoding()
-                shown = sharpened
-            } else {
-                shown = upscaled
-            }
+            shown = upscaled
+            sharpenAmount = sharpness
         }
 
-        // 3. Into the target: black around it (Fit), cropped past the edges (Fill, Zoom).
-        let bounds = CGRect(x: 0, y: 0, width: target.width, height: target.height)
-        let visible = displayRect.intersection(bounds)
+        // 3. Into the target (black around it for Fit), sharpening as it's drawn.
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         pass.colorAttachments[0].storeAction = .store
         guard let render = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
-        if !visible.isNull, visible.width >= 1, visible.height >= 1 {
-            // The part of the picture that's visible, in texture coordinates.
-            var uv = SIMD4<Float>(
-                Float((visible.minX - displayRect.minX) / displayRect.width),
-                Float((visible.minY - displayRect.minY) / displayRect.height),
-                Float(visible.width / displayRect.width),
-                Float(visible.height / displayRect.height)
+        let drawn = cropRect.intersection(bounds)
+        if !drawn.isNull, drawn.width >= 1, drawn.height >= 1 {
+            var uniforms = BlitUniforms(
+                window: SIMD4<Float>(
+                    Float((drawn.minX - cropRect.minX) / cropRect.width),
+                    Float((drawn.minY - cropRect.minY) / cropRect.height),
+                    Float(drawn.width / cropRect.width),
+                    Float(drawn.height / cropRect.height)
+                ),
+                texel: SIMD2<Float>(1 / Float(shown.width), 1 / Float(shown.height)),
+                amount: sharpenAmount
             )
-            render.setViewport(MTLViewport(originX: visible.minX, originY: visible.minY,
-                                           width: visible.width, height: visible.height, znear: 0, zfar: 1))
+            render.setViewport(MTLViewport(originX: drawn.minX, originY: drawn.minY,
+                                           width: drawn.width, height: drawn.height, znear: 0, zfar: 1))
             render.setRenderPipelineState(blit)
-            render.setVertexBytes(&uv, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+            render.setVertexBytes(&uniforms, length: MemoryLayout<BlitUniforms>.stride, index: 0)
+            render.setFragmentBytes(&uniforms, length: MemoryLayout<BlitUniforms>.stride, index: 0)
             render.setFragmentTexture(shown, index: 0)
             render.setFragmentSamplerState(sampler, index: 0)
             render.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         }
         render.endEncoding()
         return true
+    }
+
+    private struct BlitUniforms {
+        var window: SIMD4<Float>
+        var texel: SIMD2<Float>
+        var amount: Float
     }
 
     // MARK: Helpers
@@ -214,54 +233,49 @@ final class VideoEnhancer {
                                texture2d<float, access::sample> chroma [[texture(1)]],
                                texture2d<float, access::write> output [[texture(2)]],
                                constant float4 &k [[buffer(0)]],
+                               constant uint2 &origin [[buffer(1)]],
                                sampler s [[sampler(0)]],
                                uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= output.get_width() || gid.y >= output.get_height()) return;
-        float2 uv = (float2(gid) + 0.5) / float2(output.get_width(), output.get_height());
-        float y = (luma.read(gid).r - 16.0 / 255.0) * (255.0 / 219.0);
+        uint2 p = gid + origin;
+        float2 uv = (float2(p) + 0.5) / float2(luma.get_width(), luma.get_height());
+        float y = (luma.read(p).r - 16.0 / 255.0) * (255.0 / 219.0);
         float2 c = (chroma.sample(s, uv).rg - 128.0 / 255.0) * (255.0 / 224.0);
         float3 rgb = float3(y + k.x * c.y, y + k.y * c.x + k.z * c.y, y + k.w * c.x);
         output.write(float4(saturate(rgb), 1.0), gid);
     }
 
-    // Contrast-adaptive sharpen on brightness only: strongest on soft detail, backing off near
-    // strong edges (no halos) and doing nothing in flat areas (no boosted compression noise).
-    kernel void hushSharpen(texture2d<float, access::read> input [[texture(0)]],
-                            texture2d<float, access::write> output [[texture(1)]],
-                            constant float &amount [[buffer(0)]],
-                            uint2 gid [[thread_position_in_grid]]) {
-        uint w = input.get_width(), h = input.get_height();
-        if (gid.x >= w || gid.y >= h) return;
-        const float3 toLuma = float3(0.2126, 0.7152, 0.0722);
-        float3 c = input.read(gid).rgb;
-        float lc = dot(c, toLuma);
-        float ln = dot(input.read(uint2(gid.x, gid.y > 0 ? gid.y - 1 : 0)).rgb, toLuma);
-        float ls = dot(input.read(uint2(gid.x, min(gid.y + 1, h - 1))).rgb, toLuma);
-        float lw = dot(input.read(uint2(gid.x > 0 ? gid.x - 1 : 0, gid.y)).rgb, toLuma);
-        float le = dot(input.read(uint2(min(gid.x + 1, w - 1), gid.y)).rgb, toLuma);
-        float mn = min(lc, min(min(ln, ls), min(lw, le)));
-        float mx = max(lc, max(max(ln, ls), max(lw, le)));
-        float contrast = mx - mn;
-        if (contrast < 0.02) { output.write(float4(c, 1.0), gid); return; }
-        float amp = sqrt(saturate(min(mn, 1.0 - mx) / max(mx, 1e-4)));
-        float weight = -amp * mix(0.125, 0.2, saturate(amount));
-        float sharp = (lc + weight * (ln + ls + lw + le)) / (1.0 + 4.0 * weight);
-        sharp = clamp(sharp, mn, mx);
-        output.write(float4(saturate(c + (sharp - lc)), 1.0), gid);
-    }
-
+    struct BlitUniforms { float4 window; float2 texel; float amount; };
     struct BlitOut { float4 position [[position]]; float2 uv; };
 
-    vertex BlitOut hushBlitVertex(uint vid [[vertex_id]], constant float4 &window [[buffer(0)]]) {
+    vertex BlitOut hushBlitVertex(uint vid [[vertex_id]], constant BlitUniforms &u [[buffer(0)]]) {
         float2 corner = float2((vid << 1) & 2, vid & 2);
         BlitOut out;
         out.position = float4(corner * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
-        out.uv = window.xy + corner * window.zw;
+        out.uv = u.window.xy + corner * u.window.zw;
         return out;
     }
 
-    fragment float4 hushBlitFragment(BlitOut in [[stage_in]], texture2d<float> image [[texture(0)]], sampler s [[sampler(0)]]) {
-        return float4(image.sample(s, in.uv).rgb, 1.0);
+    // Draws the picture; when enhancing, with a contrast-adaptive sharpen on brightness only:
+    // strongest on soft detail, backing off near strong edges (no halos), nothing in flat areas
+    // (no boosted compression noise), and never past the local min/max.
+    fragment float4 hushBlitFragment(BlitOut in [[stage_in]], texture2d<float> image [[texture(0)]],
+                                     sampler s [[sampler(0)]], constant BlitUniforms &u [[buffer(0)]]) {
+        float3 c = image.sample(s, in.uv).rgb;
+        if (u.amount <= 0.0) return float4(c, 1.0);
+        const float3 toLuma = float3(0.2126, 0.7152, 0.0722);
+        float lc = dot(c, toLuma);
+        float ln = dot(image.sample(s, in.uv - float2(0, u.texel.y)).rgb, toLuma);
+        float ls = dot(image.sample(s, in.uv + float2(0, u.texel.y)).rgb, toLuma);
+        float lw = dot(image.sample(s, in.uv - float2(u.texel.x, 0)).rgb, toLuma);
+        float le = dot(image.sample(s, in.uv + float2(u.texel.x, 0)).rgb, toLuma);
+        float mn = min(lc, min(min(ln, ls), min(lw, le)));
+        float mx = max(lc, max(max(ln, ls), max(lw, le)));
+        if (mx - mn < 0.02) return float4(c, 1.0);
+        float amp = sqrt(saturate(min(mn, 1.0 - mx) / max(mx, 1e-4)));
+        float weight = -amp * mix(0.125, 0.2, saturate(u.amount));
+        float sharp = clamp((lc + weight * (ln + ls + lw + le)) / (1.0 + 4.0 * weight), mn, mx);
+        return float4(saturate(c + (sharp - lc)), 1.0);
     }
     """
 }
