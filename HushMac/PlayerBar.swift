@@ -9,14 +9,20 @@ struct PlayerBar: View {
 
     var body: some View {
         if let track = player.current {
-            HStack(spacing: 20) {
-                nowPlaying(track)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                transport
-                    .frame(maxWidth: .infinity)
-                    .layoutPriority(1.25)
-                trailing
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            // Three columns in fixed proportions (1 : 1.25 : 1), so the song's details always keep
+            // their share of the bar instead of being squeezed out by the transport.
+            GeometryReader { geometry in
+                let gap: CGFloat = 20
+                let unit = max(geometry.size.width - gap * 2, 0) / 3.25
+                HStack(spacing: gap) {
+                    nowPlaying(track)
+                        .frame(width: unit, alignment: .leading)
+                    transport
+                        .frame(width: unit * 1.25)
+                    trailing
+                        .frame(width: unit, alignment: .trailing)
+                }
+                .frame(maxHeight: .infinity)
             }
             .padding(.leading, 14)
             .padding(.trailing, 22)
@@ -45,20 +51,22 @@ struct PlayerBar: View {
                     .font(HushStyle.rounded(13.5, weight: .semibold))
                     .foregroundStyle(HushStyle.ink)
                     .lineLimit(1)
-                HStack(spacing: 0) {
-                    ArtistNameLinks(credit: track.artist, font: .system(size: 11.5), color: Color(red: 0.663, green: 0.651, blue: 0.624))
-                    Text(" · ")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(HushStyle.muted)
-                    Button(track.albumTitle) { navigator.show(.album(track.albumID)) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Color(red: 0.663, green: 0.651, blue: 0.624))
-                        .lineLimit(1)
-                        .pointingHandCursor()
-                }
-                .lineLimit(1)
+                // One line that truncates: a row of separate links can't, and would push into the
+                // transport. Click for the album; right-click to go to an artist.
+                Text("\(track.artist) · \(track.albumTitle)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color(red: 0.663, green: 0.651, blue: 0.624))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentShape(Rectangle())
+                    .onTapGesture { navigator.show(.album(track.albumID)) }
+                    .contextMenu {
+                        Button("Go to Album") { navigator.show(.album(track.albumID)) }
+                        ArtistLinks(credit: track.artist)
+                    }
+                    .help("\(track.artist) · \(track.albumTitle)")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
             let isFavorite = library.isFavoriteSong(track.id)
@@ -135,7 +143,7 @@ struct PlayerBar: View {
             .help("Up Next (⌘U)")
 
             VolumeControl()
-                .frame(width: 132)
+                .frame(minWidth: 64, maxWidth: 132)
 
             Button {
                 navigator.showsNowPlaying = true
