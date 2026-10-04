@@ -77,7 +77,7 @@ final class ArtworkStore: @unchecked Sendable {
         if let hit = cache.object(forKey: key as NSString) { return hit }
         let task: Task<SendableImage?, Never> = lock.withLock {
             if let existing = inFlight[key] { return existing }
-            let task = Task.detached(priority: .userInitiated) { [self] () -> SendableImage? in
+            let task = Task.detached(priority: .utility) { [self] () -> SendableImage? in
                 await self.decode(id: id, pixels: pixels, kind: kind)
             }
             inFlight[key] = task
@@ -108,7 +108,7 @@ final class ArtworkStore: @unchecked Sendable {
         if data == nil, let album {
             data = await CatalogArtwork.shared.cover(albumID: album.id, title: album.title, artist: album.artist, songTitle: album.firstSongTitle)
         }
-        guard let data, let image = Self.thumbnail(from: data, pixels: pixels) else { return nil }
+        guard let data, let image = await Self.decodeOnQueue({ Self.thumbnail(from: data, pixels: pixels) }) else { return nil }
         return SendableImage(image: image)
     }
 
@@ -139,6 +139,26 @@ final class ArtworkStore: @unchecked Sendable {
     }
 
     /// Decodes straight to the needed size (fast, and light on memory).
+    /// All ImageIO decoding runs here: one quality-of-service class (utility, so a higher-priority
+    /// thread never waits on ImageIO's own lower-priority work) and at most four at a time (the Apple
+    /// TV sections alone ask for hundreds of stills). Callers wait asynchronously, never blocking.
+    private static let decodeQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "Hush artwork decoding"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 4
+        return queue
+    }()
+
+    private static func decodeOnQueue(_ work: @escaping @Sendable () -> NSImage?) async -> NSImage? {
+        let result: SendableImage? = await withCheckedContinuation { continuation in
+            decodeQueue.addOperation {
+                continuation.resume(returning: work().map(SendableImage.init(image:)))
+            }
+        }
+        return result?.image
+    }
+
     private static func thumbnail(from data: Data, pixels: Int) -> NSImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -162,7 +182,7 @@ final class ArtworkStore: @unchecked Sendable {
         if let hit = cachedBlur(for: id) { return hit }
         guard let small = await image(for: id, pixels: 240) else { return nil }
         let source = SendableImage(image: small)
-        let result = await Task.detached(priority: .userInitiated) { [self] () -> SendableImage? in
+        let result = await Task.detached(priority: .utility) { [self] () -> SendableImage? in
             guard let cgImage = source.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
             let input = CIImage(cgImage: cgImage)
             let output = input
@@ -189,7 +209,7 @@ final class ArtworkStore: @unchecked Sendable {
         if let hit = cachedColors(for: id) { return hit }
         guard let small = await image(for: id, pixels: 240) else { return nil }
         let source = SendableImage(image: small)
-        let made = await Task.detached(priority: .userInitiated) { () -> CoverColors? in
+        let made = await Task.detached(priority: .utility) { () -> CoverColors? in
             guard let cgImage = source.image.cgImage(forProposedRect: nil, context: nil, hints: nil),
                   let edges = ArtworkColors.edgeColors(of: CIImage(cgImage: cgImage)) else { return nil }
             return CoverColors(top: edges.top, bottom: edges.bottom)
