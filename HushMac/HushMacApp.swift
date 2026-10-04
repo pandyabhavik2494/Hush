@@ -199,7 +199,7 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Space plays and pauses anywhere (except while typing). In the video player: Esc closes it,
-    /// Z cycles Fit / Fill / Zoom, E turns Enhance on and off, F toggles full screen, ← and → skip 10 seconds. Esc also closes
+    /// Z cycles Fit / Fill / Zoom, F toggles full screen, ← and → skip 10 seconds. Esc also closes
     /// Now Playing.
     static func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
@@ -212,7 +212,6 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
             case 49: video.togglePlayPause(); return true                  // Space
             case 53: video.close(); return true                            // Esc
             case 6: video.cycleGravity(); return true                      // Z
-            case 14: video.enhance.toggle(); return true                   // E
             case 3:                                                         // F
                 if let window = NSApp.keyWindow {
                     video.enteredFullScreen = !window.styleMask.contains(.fullScreen)
