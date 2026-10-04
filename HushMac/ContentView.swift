@@ -98,6 +98,8 @@ struct MainArea: View {
             ArtworkGlow(id: library.playlist(id: id)?.mosaicTrackIDs.first, height: 640, strength: 0.5)
         case .artist(let id):
             ArtworkGlow(id: library.artist(id: id)?.albums.first?.artworkTrackID, height: 560, strength: 0.45)
+        case .appleTVShow(let id):
+            ArtworkGlow(id: library.appleTVShows.first { $0.id == id }?.artworkID, height: 640, strength: 0.5)
         case nil:
             HushAmbientLight()
                 .frame(height: 520)
@@ -117,6 +119,7 @@ struct MainArea: View {
             case .album(let id): AlbumPage(albumID: id).id(id)
             case .artist(let id): ArtistPage(artistID: id).id(id)
             case .playlist(let id): PlaylistPage(playlistID: id).id(id)
+            case .appleTVShow(let id): AppleTVShowPage(showID: id)
             case nil:
                 switch navigator.section {
                 case .albums: AlbumsGrid()
@@ -125,6 +128,8 @@ struct MainArea: View {
                 case .artists: ArtistsGrid()
                 case .musicVideos: MusicVideosGrid()
                 case .movies: MoviesGrid()
+                case .appleTVMovies: AppleTVMoviesGrid()
+                case .appleTVShows: AppleTVShowsGrid()
                 }
             }
         }
@@ -211,6 +216,7 @@ struct LibraryToolbar: View {
         case .album(let id): return library.album(id: id)?.title ?? "Album"
         case .artist(let id): return library.artist(id: id)?.name ?? "Artist"
         case .playlist(let id): return library.playlist(id: id)?.name ?? "Playlist"
+        case .appleTVShow(let id): return library.appleTVShows.first { $0.id == id }?.name ?? "Show"
         }
     }
 
@@ -222,6 +228,8 @@ struct LibraryToolbar: View {
         case .artists: return nil
         case .musicVideos: return library.videos.count
         case .movies: return library.movies.count
+        case .appleTVMovies: return library.appleTVMovies.count
+        case .appleTVShows: return library.appleTVShows.count
         }
     }
 
@@ -375,6 +383,8 @@ struct SidebarView: View {
                     VStack(spacing: 2) {
                         row(.musicVideos, count: library.videos.count)
                         row(.movies, count: library.movies.count)
+                        row(.appleTVMovies, count: library.appleTVMovies.count)
+                        row(.appleTVShows, count: library.appleTVShows.count)
                     }
                     if !library.playlists.isEmpty {
                         header("PLAYLISTS", top: 18)

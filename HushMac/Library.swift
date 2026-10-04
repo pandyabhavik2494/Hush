@@ -131,6 +131,8 @@ struct LibrarySnapshot: Sendable {
     var playlists: [Playlist] = []
     var videos: [Video] = []
     var movies: [Video] = []
+    var appleTVMovies: [AppleTVMovie] = []
+    var appleTVShows: [AppleTVShow] = []
     var signature = 0
 }
 
@@ -155,6 +157,9 @@ final class LibraryModel {
     private(set) var playlists: [Playlist] = []
     private(set) var videos: [Video] = []
     private(set) var movies: [Video] = []
+    /// Bought or rented on Apple TV: shown in their own sections, played in the TV app.
+    private(set) var appleTVMovies: [AppleTVMovie] = []
+    private(set) var appleTVShows: [AppleTVShow] = []
     /// Bumped whenever a new snapshot is applied.
     private(set) var revision = 0
     private(set) var lastLoad: Date?
@@ -226,6 +231,8 @@ final class LibraryModel {
         playlists = snapshot.playlists
         videos = snapshot.videos
         movies = snapshot.movies
+        appleTVMovies = snapshot.appleTVMovies
+        appleTVShows = snapshot.appleTVShows
         tracksByID = Dictionary(snapshot.songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         albumsByID = Dictionary(snapshot.albums.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         artistsByID = Dictionary(snapshot.artists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -347,6 +354,7 @@ enum LibraryLoader {
     private static let movieKind: UInt = 3
     private static let musicVideoKind: UInt = 7
     private static let homeVideoKind: UInt = 12
+    private static let tvShowKind: UInt = 8
     // ITLibPlaylistKind / ITLibDistinguishedPlaylistKind raw values.
     private static let regularPlaylist: UInt = 0
     private static let notDistinguished: UInt = 0
@@ -359,6 +367,8 @@ enum LibraryLoader {
         var tracks: [Track] = []
         var videos: [Video] = []
         var movies: [Video] = []
+        var appleTVMovies: [AppleTVMovie] = []
+        var episodes: [(item: ITLibMediaItem, id: UInt64)] = []
         var artworkSources: [UInt64: ITLibMediaItem] = [:]
         var locations: [UInt64: URL] = [:]
 
@@ -377,13 +387,20 @@ enum LibraryLoader {
                 artworkSources[id] = item
                 if let location = item.location { locations[id] = location }
             case movieKind:
-                // Only your own movie files: Apple TV purchases belong to the TV app.
-                guard !AppleTVPurchases.isPurchase(kind: item.kind, isProtected: item.isDRMProtected,
-                                                   hasLocalFile: item.location?.isFileURL == true,
-                                                   isCloud: item.isCloud) else { continue }
+                // Your own movie files go in Movies; Apple TV purchases get their own section.
+                if AppleTVPurchases.isPurchase(kind: item.kind, isProtected: item.isDRMProtected,
+                                               hasLocalFile: item.location?.isFileURL == true,
+                                               isCloud: item.isCloud) {
+                    appleTVMovies.append(AppleTVLibrary.movie(from: item, id: id))
+                    artworkSources[id] = item
+                    continue
+                }
                 movies.append(makeVideo(item, id: id, isMovie: true))
                 artworkSources[id] = item
                 if let location = item.location { locations[id] = location }
+            case tvShowKind:
+                episodes.append((item, id))
+                artworkSources[id] = item
             default:
                 continue
             }
@@ -416,6 +433,8 @@ enum LibraryLoader {
             hasher.combine(playlist.name)
             for track in playlist.tracks { hasher.combine(track.id) }
         }
+        for movie in appleTVMovies { hasher.combine(movie.id) }
+        hasher.combine(episodes.count)
         for video in videos + movies {
             hasher.combine(video.id)
             hasher.combine(video.title)
@@ -429,6 +448,8 @@ enum LibraryLoader {
             playlists: playlists,
             videos: videos,
             movies: movies,
+            appleTVMovies: appleTVMovies.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending },
+            appleTVShows: AppleTVLibrary.shows(from: episodes),
             signature: hasher.finalize()
         )
     }

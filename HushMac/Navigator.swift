@@ -9,6 +9,8 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
     case artists
     case musicVideos
     case movies
+    case appleTVMovies
+    case appleTVShows
 
     var id: String { rawValue }
 
@@ -20,6 +22,8 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "Artists"
         case .musicVideos: return "Music Videos"
         case .movies: return "Movies"
+        case .appleTVMovies: return "Apple TV Movies"
+        case .appleTVShows: return "Apple TV Shows"
         }
     }
 
@@ -31,6 +35,8 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "music.mic"
         case .musicVideos: return "play.rectangle"
         case .movies: return "film"
+        case .appleTVMovies: return "appletv"
+        case .appleTVShows: return "tv"
         }
     }
 
@@ -42,18 +48,22 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "Find an artist or song"
         case .musicVideos: return "Find a video"
         case .movies: return "Find a movie or genre"
+        case .appleTVMovies: return "Find a movie or genre"
+        case .appleTVShows: return "Find a show or episode"
         }
     }
 
     /// Sections whose artwork already carries the name: titles are hidden by default and the
     /// covers sit edge to edge as a mosaic. The toolbar toggle shows them.
     var hasTitleToggle: Bool {
-        self == .albums || self == .playlists || self == .movies
+        self == .albums || self == .playlists || self == .movies || self == .appleTVMovies
     }
 
     var sortOptions: [LibrarySort] {
         switch self {
         case .artists: return [.alphabetical, .mostPlayed, .favorites]
+        case .appleTVMovies: return [.alphabetical]
+        case .appleTVShows: return []
         default: return [.alphabetical, .mostPlayed]
         }
     }
@@ -92,6 +102,7 @@ enum Route: Hashable {
     case album(UInt64)
     case artist(String)
     case playlist(UInt64)
+    case appleTVShow(String)
 
     init(_ source: PlaybackSource) {
         switch source {
@@ -223,6 +234,7 @@ final class Navigator {
     /// "in" Movies): then it opens in the section it belongs to.
     private func defaultSection(for route: Route) -> LibrarySection {
         switch (route, section) {
+        case (.appleTVShow, _): return .appleTVShows
         case (_, .albums), (_, .songs), (_, .artists), (_, .playlists): return section
         case (.album, _): return .albums
         case (.artist, _): return .artists

@@ -14,5 +14,14 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>com.apple.security.scripting-targets</key>
+	<dict>
+		<key>com.apple.TV</key>
+		<array>
+			<string>com.apple.TV.library.read</string>
+			<string>com.apple.TV.playback</string>
+			<string>com.apple.TV.user-interface</string>
+		</array>
+	</dict>
 </dict>
 </plist>

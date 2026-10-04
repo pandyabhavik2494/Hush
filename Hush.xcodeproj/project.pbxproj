@@ -319,6 +319,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Hush;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Hush reads your Music library to show your songs, albums, playlists, music videos and movies, and to play them.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Hush asks the TV app to play the Apple TV movies and episodes you choose.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
@@ -347,6 +348,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Hush;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Hush reads your Music library to show your songs, albums, playlists, music videos and movies, and to play them.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Hush asks the TV app to play the Apple TV movies and episodes you choose.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;

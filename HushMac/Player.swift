@@ -440,7 +440,7 @@ final class Player {
         UserDefaults.standard.set(enabled, forKey: Keys.shuffle)
     }
 
-    private func showToast(_ message: String) {
+    func showToast(_ message: String) {
         toastTask?.cancel()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
         toastTask = Task { [weak self] in
