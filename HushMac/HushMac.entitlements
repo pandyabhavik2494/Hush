@@ -19,6 +19,7 @@
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.TV</string>
+		<string>com.apple.Music</string>
 	</array>
 	<key>com.apple.security.scripting-targets</key>
 	<dict>

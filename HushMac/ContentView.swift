@@ -481,13 +481,15 @@ struct SidebarView: View {
     }
 
     private var statusText: String {
+        if let note = MusicAutoImport.shared.importingNote { return note + "…" }
         if library.isRefreshing { return "Reading your Music library…" }
         if case .failed = library.status { return "Music library unavailable" }
+        if let note = MusicAutoImport.shared.refusedNote { return note }
         return "Music library, up to date"
     }
 
     private var statusColor: Color {
-        if library.isRefreshing { return HushStyle.gold }
+        if library.isRefreshing || MusicAutoImport.shared.importingNote != nil { return HushStyle.gold }
         if case .failed = library.status { return Color(red: 0.85, green: 0.42, blue: 0.36) }
         return Color(red: 0.498, green: 0.698, blue: 0.478)
     }

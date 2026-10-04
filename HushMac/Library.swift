@@ -133,6 +133,8 @@ struct LibrarySnapshot: Sendable {
     var movies: [Video] = []
     var appleTVMovies: [AppleTVMovie] = []
     var appleTVShows: [AppleTVShow] = []
+    /// The Music app's "Automatically Add to Music" folder, if Hush can see it.
+    var autoAddFolder: URL?
     var signature = 0
 }
 
@@ -235,6 +237,7 @@ final class LibraryModel {
     }
 
     private func apply(_ snapshot: LibrarySnapshot) {
+        MusicAutoImport.shared.check(folder: snapshot.autoAddFolder)
         MediaAccess.shared.check(locations: snapshot.songs.prefix(400).map(\.location)
             + snapshot.videos.compactMap(\.location) + snapshot.movies.compactMap(\.location))
         if snapshot.signature == signature, !songs.isEmpty {
@@ -472,6 +475,7 @@ enum LibraryLoader {
             movies: movies,
             appleTVMovies: appleTVMovies.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending },
             appleTVShows: AppleTVLibrary.shows(from: episodes),
+            autoAddFolder: MusicAutoImport.folder(mediaFolder: library.mediaFolderLocation, nearFile: songs.first?.location),
             signature: hasher.finalize()
         )
     }
