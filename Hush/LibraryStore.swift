@@ -85,8 +85,11 @@ struct AppleTVShowItem: Identifiable {
     let searchKey: String
 
     var seasons: [Int] { Array(Set(episodes.map(\.season))).sorted() }
-    /// The first episode stands in for show art (purchases carry episode stills only).
-    var artworkItem: MPMediaItem? { episodes.first?.item }
+    /// The first episode that has a still stands in for show art (purchases carry episode stills
+    /// only, and episodes still in the cloud often have none).
+    var artworkItem: MPMediaItem? {
+        episodes.first { ($0.item.artwork?.bounds.width ?? 0) > 0 }?.item ?? episodes.first?.item
+    }
     var episodesText: String { episodes.count == 1 ? "1 episode" : "\(episodes.count) episodes" }
     var seasonsText: String {
         seasons.count == 1 ? (seasons.first.map { "Season \($0)" } ?? "1 season") : "\(seasons.count) seasons"

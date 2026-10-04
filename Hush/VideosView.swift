@@ -411,8 +411,19 @@ struct PurchaseArtwork: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .task(id: item?.persistentID) {
-                // MediaPlayer hands out artwork reliably only on the main thread; decode off it.
-                guard let raw = item?.artwork?.image(at: CGSize(width: 640, height: 360)) else { return }
+                guard let item else { return }
+                // Purchases still in the cloud often have no artwork until the library has fetched it,
+                // so a miss gets one more try a little later.
+                var raw = Self.artwork(of: item)
+                if raw == nil {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    raw = Self.artwork(of: item)
+                }
+                guard let raw else {
+                    hushLog.debug("No artwork for purchase \(item.title ?? "?", privacy: .public) (cloud: \(item.isCloudItem, privacy: .public))")
+                    return
+                }
                 image = await raw.byPreparingForDisplay() ?? raw
             }
             .accessibilityHidden(true)
@@ -420,6 +431,21 @@ struct PurchaseArtwork: View {
 }
 
 /// An Apple TV movie: 16:9 key art; the title only when titles are on.
+extension PurchaseArtwork {
+    /// The item's art at its own shape (16:9 for movies and stills), at most 640 points wide; a fixed
+    /// 16:9 size when the art doesn't report one. MediaPlayer hands out artwork reliably only on the
+    /// main thread; the decode happens off it.
+    @MainActor
+    static func artwork(of item: MPMediaItem) -> UIImage? {
+        guard let artwork = item.artwork else { return nil }
+        let bounds = artwork.bounds.size
+        let size = bounds.width > 0 && bounds.height > 0
+            ? CGSize(width: min(bounds.width, 640), height: min(bounds.width, 640) * bounds.height / bounds.width)
+            : CGSize(width: 640, height: 360)
+        return artwork.image(at: size) ?? artwork.image(at: CGSize(width: 640, height: 360))
+    }
+}
+
 struct AppleTVMovieTile: View {
     let movie: LibraryVideo
     let showsTitle: Bool
