@@ -192,7 +192,12 @@ private struct LibrarySnapshot: @unchecked Sendable {
         query.addFilterPredicate(
             MPMediaPropertyPredicate(value: MPMediaType.movie.rawValue, forProperty: MPMediaItemPropertyMediaType)
         )
-        var movies: [LibraryVideo] = (query.items ?? []).map { item in
+        // Only your own movie files: Apple TV purchases (protected, or only in the cloud) belong to the TV app.
+        let ownFiles = (query.items ?? []).filter { item in
+            !AppleTVPurchases.isPurchase(kind: nil, isProtected: item.hasProtectedAsset,
+                                         hasLocalFile: item.assetURL != nil, isCloud: item.isCloudItem)
+        }
+        var movies: [LibraryVideo] = ownFiles.map { item in
             let rawTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let title = rawTitle.isEmpty ? "Untitled Movie" : rawTitle
             let rawGenre = (item.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

@@ -567,7 +567,7 @@ struct MovieTile: View {
                 CoverView(id: movie.id, pixels: 600, cornerRadius: 10, aspectRatio: 2 / 3, placeholderSymbol: "film")
                     .overlay {
                         if isHovering {
-                            Image(systemName: movie.canPlayInHush ? "play.fill" : "tv")
+                            Image(systemName: "play.fill")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(HushStyle.paper)
                                 .frame(width: 46, height: 46)
@@ -575,9 +575,6 @@ struct MovieTile: View {
                                 .shadow(color: .black.opacity(0.4), radius: 8, y: 3)
                                 .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if !movie.canPlayInHush { TVAppBadge().padding(8) }
                     }
                     .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
@@ -589,7 +586,7 @@ struct MovieTile: View {
         .onHover { hovering in withAnimation(.easeOut(duration: 0.15)) { isHovering = hovering } }
         .help(showsTitle ? "" : [movie.title, movie.yearAndGenre].filter { !$0.isEmpty }.joined(separator: " — "))
         .contextMenu {
-            Button(movie.canPlayInHush ? "Play" : "Open in TV App", action: play)
+            Button("Play", action: play)
             if let location = movie.location {
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([location]) }
             }

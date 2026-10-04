@@ -275,6 +275,7 @@ final class LibraryModel {
 
     /// Copy-protected videos can't play in Hush. ITLibrary flags most; AVFoundation has the final word.
     private func checkProtection() {
+        // Movies are only your own files; a protected one found here is dropped rather than badged.
         let candidates = (videos + movies).filter { $0.location != nil && !$0.isProtected }
         guard !candidates.isEmpty else { return }
         let revisionAtStart = revision
@@ -287,7 +288,7 @@ final class LibraryModel {
             }
             guard !protected.isEmpty, revision == revisionAtStart else { return }
             videos = videos.map { var v = $0; if protected.contains(v.id) { v.isProtected = true }; return v }
-            movies = movies.map { var v = $0; if protected.contains(v.id) { v.isProtected = true }; return v }
+            movies = movies.filter { !protected.contains($0.id) }
         }
     }
 
@@ -376,6 +377,10 @@ enum LibraryLoader {
                 artworkSources[id] = item
                 if let location = item.location { locations[id] = location }
             case movieKind:
+                // Only your own movie files: Apple TV purchases belong to the TV app.
+                guard !AppleTVPurchases.isPurchase(kind: item.kind, isProtected: item.isDRMProtected,
+                                                   hasLocalFile: item.location?.isFileURL == true,
+                                                   isCloud: item.isCloud) else { continue }
                 movies.append(makeVideo(item, id: id, isMovie: true))
                 artworkSources[id] = item
                 if let location = item.location { locations[id] = location }
@@ -386,7 +391,7 @@ enum LibraryLoader {
 
         // Movies the TV app keeps in its media folder that ITLibrary doesn't list.
         let knownPaths = Set(movies.compactMap { $0.location?.standardizedFileURL.path })
-        for movie in await TVFolderScanner.scan(excluding: knownPaths) {
+        for movie in await TVFolderScanner.scan(excluding: knownPaths) where !movie.isProtected {
             movies.append(movie)
             if let location = movie.location { locations[movie.id] = location }
         }
