@@ -6,7 +6,7 @@ import UIKit
 
 // MARK: - Tile
 
-/// One video in the Videos tab: a 16:9 still with its length, and the title underneath.
+/// One video in the Videos tab: a full-width 16:9 still with its length, and the title underneath.
 struct VideoTile: View {
     let video: LibraryVideo
 
@@ -36,20 +36,12 @@ struct VideoTile: View {
                     }
                 }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(video.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(HushStyle.ink)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                if let artist = video.artist {
-                    Text(artist)
-                        .font(.system(size: 12))
-                        .foregroundStyle(HushStyle.muted)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 2)
+            Text(video.title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(HushStyle.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 2)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -74,12 +66,14 @@ struct VideoTile: View {
 
 // MARK: - Movies
 
-/// One movie in the Movies tab: its poster, then the title, with the year and genre underneath.
+/// One movie in the Movies tab: its poster and, when titles are switched on, the title with the
+/// year and genre underneath.
 struct MovieTile: View {
     let movie: LibraryVideo
+    var showsTitle = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: showsTitle ? 7 : 0) {
             MoviePoster(movie: movie)
                 .overlay(alignment: .topTrailing) {
                     // Not on this iPhone (still in the cloud) or copy-protected: can't be played here.
@@ -93,20 +87,22 @@ struct MovieTile: View {
                     }
                 }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(movie.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(HushStyle.ink)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                if let details = Self.details(movie) {
-                    Text(details)
-                        .font(.system(size: 11))
-                        .foregroundStyle(HushStyle.muted)
-                        .lineLimit(1)
+            if showsTitle {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(movie.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(HushStyle.ink)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                    if let details = Self.details(movie) {
+                        Text(details)
+                            .font(.system(size: 11))
+                            .foregroundStyle(HushStyle.muted)
+                            .lineLimit(1)
+                    }
                 }
+                .padding(.horizontal, 2)
             }
-            .padding(.horizontal, 2)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())

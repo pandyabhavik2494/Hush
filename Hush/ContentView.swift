@@ -423,6 +423,13 @@ struct ContentView: View {
     @State private var libraryHeaderBottom: CGFloat = 0
     /// Whether album/playlist names appear under the artwork in the grids. Off by default; remembered between launches.
     @AppStorage("hush.showGridTitles") private var showGridTitles = false
+    /// The same for movie names under the posters. Off by default, remembered on its own.
+    @AppStorage("hush.showMovieTitles") private var showMovieTitles = false
+
+    /// The titles toggle in the header: movies have their own, albums and playlists share one.
+    private var gridTitles: Binding<Bool> {
+        selectedTab == .movies ? $showMovieTitles : $showGridTitles
+    }
 
     // Filtered + sorted lists are cached and rebuilt only when search, sort, or the library changes,
     // instead of re-sorting the whole library on every redraw (e.g. each play/pause).
@@ -786,22 +793,22 @@ struct ContentView: View {
                 // The glass itself never animates.
                 .animation(nil, value: selectedTab)
                 .accessibilityLabel("\(tabCount) \(selectedTab.rawValue.lowercased())")
-            if selectedTab == .playlists || selectedTab == .albums {
+            if selectedTab == .playlists || selectedTab == .albums || selectedTab == .movies {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showGridTitles.toggle()
+                        gridTitles.wrappedValue.toggle()
                     }
                 } label: {
                     Image(systemName: "text.below.photo")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(showGridTitles ? HushStyle.gold : HushStyle.ink.opacity(0.9))
+                        .foregroundStyle(gridTitles.wrappedValue ? HushStyle.gold : HushStyle.ink.opacity(0.9))
                         .frame(width: 38, height: 38)
                         .hushHeaderGlass(Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Show titles")
-                .accessibilityValue(showGridTitles ? "On" : "Off")
+                .accessibilityValue(gridTitles.wrappedValue ? "On" : "Off")
             }
             // Playlists are listed A–Z like the Music app; sorting only applies to Albums and Songs.
             if selectedTab != .playlists {
@@ -1145,16 +1152,17 @@ struct ContentView: View {
             itemIDs: visibleVideoIDs,
             itemLetters: visibleVideoLetters,
             isAlphabetical: sort == .alphabetical,
-            itemsPerRow: 2,
-            estimatedRowHeight: 170,
+            itemsPerRow: 1,
+            estimatedRowHeight: 250,
             estimatedPadding: 36,
             onRefresh: { await library.refreshLibrary() },
             scrollToTopSignal: scrollToTop.signal(for: .videos)
         ) {
+            // One wide still per row, so each video is big enough to see what it is.
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2),
+                columns: [GridItem(.flexible())],
                 alignment: .leading,
-                spacing: 16
+                spacing: 18
             ) {
                 ForEach(visibleVideos) { video in
                     Button {
@@ -1217,7 +1225,7 @@ struct ContentView: View {
             itemLetters: visibleMovieLetters,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 3,
-            estimatedRowHeight: 220,
+            estimatedRowHeight: showMovieTitles ? 236 : 186,
             estimatedPadding: movieGenres.isEmpty ? 36 : 82,
             onRefresh: { await library.refreshLibrary() },
             scrollToTopSignal: scrollToTop.signal(for: .movies)
@@ -1227,23 +1235,24 @@ struct ContentView: View {
                     genreFilter
                         .underHeaderBlur()
                 }
+                // Like the Albums grid: posters close together, names only when the titles toggle is on.
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+                    columns: Array(repeating: GridItem(.flexible(), spacing: showMovieTitles ? 10 : 6), count: 3),
                     alignment: .leading,
-                    spacing: 16
+                    spacing: showMovieTitles ? 18 : 6
                 ) {
                     ForEach(visibleMovies) { movie in
                         Button {
                             play(movie)
                         } label: {
-                            MovieTile(movie: movie)
+                            MovieTile(movie: movie, showsTitle: showMovieTitles)
                         }
                         .buttonStyle(TilePressStyle())
                         .underHeaderBlur()
                         .id(movie.id)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
             }
             .padding(.top, 20)
             .padding(.bottom, 16)
