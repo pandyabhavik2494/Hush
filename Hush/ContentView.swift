@@ -336,6 +336,8 @@ struct ContentView: View {
     @State private var miniPlayerTop: CGFloat = .infinity
     @Namespace private var tabNamespace
     @State private var selectedTab: LibraryTab = .albums
+    /// Which ends of the tab strip have tabs scrolled out of sight (nil until iOS 18 reports it).
+    @State private var tabStripOverflow: TabStripOverflow?
     @State private var scrollToTop = ScrollToTopRequest()
     @State private var sort: LibrarySort = .alphabetical
     /// The Artists tab has its own sort: artists with the most songs first by default (remembered).
@@ -892,6 +894,9 @@ struct ContentView: View {
                 .padding(3)
             }
             .scrollClipDisabled(false)
+            // Fade whichever edge has more tabs past it, so it's clear the strip scrolls.
+            .modifier(TabStripOverflowReporter { tabStripOverflow = $0 })
+            .mask { tabStripFade }
             // Static glass track; only the gold pill on top of it moves.
             .hushHeaderGlass(Capsule())
             .clipShape(Capsule())
@@ -904,6 +909,23 @@ struct ContentView: View {
         .padding(.bottom, 10)
         // Scoped to the tab bar only, so the library content itself switches instantly.
         .animation(.spring(response: 0.34, dampingFraction: 0.82), value: selectedTab)
+    }
+
+    /// Opaque in the middle, fading out at an edge that has tabs beyond it. Before iOS 18 (no scroll
+    /// position), the selected tab stands in: the strip keeps it centred, so tabs lie past an edge
+    /// unless it's one of the first or last two.
+    private var tabStripFade: some View {
+        let tabs = LibraryTab.allCases
+        let index = tabs.firstIndex(of: selectedTab) ?? 0
+        let overflow = tabStripOverflow ?? TabStripOverflow(leading: index > 1, trailing: index < tabs.count - 2)
+        return HStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(overflow.leading ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 28)
+            Rectangle()
+            LinearGradient(colors: [.black, .black.opacity(overflow.trailing ? 0 : 1)], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 28)
+        }
+        .animation(.easeOut(duration: 0.2), value: overflow)
     }
 
     private var tabCount: String {
@@ -2118,6 +2140,32 @@ private struct ScrollTickHaptics: ViewModifier {
                     }
             } else {
                 content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Which ends of a sideways scroll view have content beyond them.
+private struct TabStripOverflow: Equatable {
+    var leading: Bool
+    var trailing: Bool
+}
+
+/// Reports which ends of a sideways scroll view have content out of sight. Needs iOS 18; before
+/// that it reports nothing and the caller falls back.
+private struct TabStripOverflowReporter: ViewModifier {
+    let action: (TabStripOverflow) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: TabStripOverflow.self) { geometry in
+                let offset = geometry.contentOffset.x + geometry.contentInsets.leading
+                let hidden = geometry.contentSize.width - geometry.containerSize.width - offset
+                return TabStripOverflow(leading: offset > 1, trailing: hidden > 1)
+            } action: { _, overflow in
+                action(overflow)
             }
         } else {
             content
