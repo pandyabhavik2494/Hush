@@ -1224,8 +1224,7 @@ struct ContentView: View {
         }
         Haptics.play()
         library.pauseForVideo()
-        // Previous and next in the player move through the grid as it's shown (sort, search, genre).
-        VideoPlayback.present(video, in: video.isMovie ? visibleMovies : visibleVideos)
+        VideoPlayback.present(video)
     }
 
     @ViewBuilder

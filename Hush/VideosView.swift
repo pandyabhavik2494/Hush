@@ -268,148 +268,33 @@ enum VideoThumbnails {
 // MARK: - Playback
 
 /// Plays a video or movie in the system's full-screen player (scrubbing, AirPlay, subtitles, close button
-/// and swipe-down all come with it), with previous and next buttons laid over it that move through the
-/// list the video was opened from.
+/// and swipe-down all come with it).
 @MainActor
 enum VideoPlayback {
     /// The player keeps only a weak link to its delegate, so this one lives for the whole app.
     private static let delegate = PlayerDelegate()
-    /// What's showing: the list it came from (only videos on this iPhone) and where in it we are.
-    private static var queue: [LibraryVideo] = []
-    private static var index = 0
-    private static weak var controller: AVPlayerViewController?
-    private static var remoteTargets: [(MPRemoteCommand, Any)] = []
-    private static var pauseObservation: NSKeyValueObservation?
-    static let skipControls = VideoSkipControls()
 
     /// Opens the player. Returns false when the video can't be played here (no file on this iPhone).
     @discardableResult
-    static func present(_ video: LibraryVideo, in list: [LibraryVideo]? = nil) -> Bool {
+    static func present(_ video: LibraryVideo) -> Bool {
         guard let url = video.assetURL, let presenter = topViewController() else { return false }
 
         // Same category the music uses: sound plays even with the silent switch on.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
 
-        let playable = (list ?? [video]).filter { $0.assetURL != nil }
-        queue = playable.isEmpty ? [video] : playable
-        index = queue.firstIndex(where: { $0.id == video.id }) ?? 0
-
-        let player = AVPlayer(playerItem: makeItem(url: url, video: video))
+        let item = AVPlayerItem(url: url)
+        item.externalMetadata = metadata(for: video)
+        let player = AVPlayer(playerItem: item)
         let controller = AVPlayerViewController()
         controller.player = player
         controller.modalPresentationStyle = .fullScreen
         // Picture in Picture would leave a video playing after its screen is gone; keep it simple.
         controller.allowsPictureInPicturePlayback = false
         controller.delegate = delegate
-        self.controller = controller
-        enableRemoteCommands()
         presenter.present(controller, animated: true) {
             player.play()
-            // Added once the player is on screen, so they sit above its own controls layer.
-            if queue.count > 1 { addSkipControls(to: controller) }
         }
         return true
-    }
-
-    // MARK: Previous and next
-
-    static var hasNext: Bool { index + 1 < queue.count }
-    static var hasPrevious: Bool { index > 0 }
-
-    /// The next video in the list.
-    static func next() {
-        guard hasNext else { return }
-        Haptics.tap()
-        show(at: index + 1)
-    }
-
-    /// Restarts the video if it's more than 3 seconds in; otherwise the previous one in the list.
-    static func previous() {
-        guard let player = controller?.player else { return }
-        Haptics.tap()
-        if player.currentTime().seconds > 3 || !hasPrevious {
-            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
-                guard finished else { return }
-                Task { @MainActor in player.play() }
-            }
-        } else {
-            show(at: index - 1)
-        }
-    }
-
-    private static func show(at newIndex: Int) {
-        guard queue.indices.contains(newIndex), let player = controller?.player,
-              let url = queue[newIndex].assetURL else { return }
-        index = newIndex
-        player.replaceCurrentItem(with: makeItem(url: url, video: queue[newIndex]))
-        player.play()
-        skipControls.update(hasPrevious: hasPrevious, hasNext: hasNext)
-    }
-
-    private static func makeItem(url: URL, video: LibraryVideo) -> AVPlayerItem {
-        let item = AVPlayerItem(url: url)
-        item.externalMetadata = metadata(for: video)
-        return item
-    }
-
-    /// The buttons sit over the system player, either side of its own controls, and come and go
-    /// with them (a tap, a pause or a new video shows them; they fade a few seconds later).
-    private static func addSkipControls(to controller: AVPlayerViewController) {
-        // UIKit buttons: unlike SwiftUI ones, they win taps over the player's own tap gesture.
-        let previous = SkipButton(symbol: "backward.end.fill", label: "Previous") { VideoPlayback.previous() }
-        let next = SkipButton(symbol: "forward.end.fill", label: "Next") { VideoPlayback.next() }
-        skipControls.attach(previous: previous, next: next)
-        skipControls.update(hasPrevious: hasPrevious, hasNext: hasNext)
-        // The system's skip-back / play / skip-forward cluster is centred; these sit in a row just
-        // under it, so they never cover it whatever the phone's size or orientation.
-        for (button, offset) in [(previous, -44.0), (next, 44.0)] {
-            controller.view.addSubview(button)
-            NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 48),
-                button.heightAnchor.constraint(equalToConstant: 48),
-                button.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor, constant: offset),
-                button.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor, constant: 92),
-            ])
-        }
-        let tap = UITapGestureRecognizer(target: skipControls, action: #selector(VideoSkipControls.screenTapped))
-        tap.cancelsTouchesInView = false
-        tap.delegate = skipControls
-        controller.view.addGestureRecognizer(tap)
-        // Pausing brings the system controls up: these follow.
-        if let player = controller.player {
-            pauseObservation = player.observe(\.timeControlStatus, options: [.new]) { player, _ in
-                let paused = player.timeControlStatus == .paused
-                Task { @MainActor in skipControls.setPaused(paused) }
-            }
-        }
-        skipControls.show()
-    }
-
-    /// Lock screen and Control Center next/previous move through the videos while one is open.
-    private static func enableRemoteCommands() {
-        disableRemoteCommands()
-        let center = MPRemoteCommandCenter.shared()
-        let nextTarget = center.nextTrackCommand.addTarget { _ in
-            MainActor.assumeIsolated { next() }
-            return .success
-        }
-        let previousTarget = center.previousTrackCommand.addTarget { _ in
-            MainActor.assumeIsolated { previous() }
-            return .success
-        }
-        remoteTargets = [(center.nextTrackCommand, nextTarget), (center.previousTrackCommand, previousTarget)]
-    }
-
-    private static func disableRemoteCommands() {
-        for (command, target) in remoteTargets { command.removeTarget(target) }
-        remoteTargets = []
-    }
-
-    /// The player has closed.
-    fileprivate static func didClose() {
-        disableRemoteCommands()
-        pauseObservation = nil
-        queue = []
     }
 
     /// Title and artist for the player's own title area.
@@ -448,116 +333,11 @@ enum VideoPlayback {
                     guard !context.isCancelled else { return }
                     MainActor.assumeIsolated {
                         playerViewController.player?.pause()
-                        VideoPlayback.didClose()
                         HushAppDelegate.refreshSupportedOrientations()
                     }
                 }
             }
         }
-    }
-}
-
-/// Shows and hides the previous/next buttons and keeps them enabled only where there's somewhere to go.
-@MainActor
-final class VideoSkipControls: NSObject, UIGestureRecognizerDelegate {
-    private weak var previous: SkipButton?
-    private weak var next: SkipButton?
-    private var hideTask: Task<Void, Never>?
-
-    func attach(previous: SkipButton, next: SkipButton) {
-        self.previous = previous
-        self.next = next
-        previous.onPress = { [weak self] in self?.show() }
-        next.onPress = { [weak self] in self?.show() }
-    }
-
-    func update(hasPrevious: Bool, hasNext: Bool) {
-        // Previous always works: it restarts the first video.
-        previous?.isEnabled = true
-        next?.isEnabled = hasNext
-    }
-
-    /// Pausing (or reaching the end) brings the system controls up for a moment: these too.
-    func setPaused(_ paused: Bool) {
-        if paused { show() }
-    }
-
-    /// Shows the buttons, then fades them out with the system controls (about 3 seconds).
-    func show() {
-        for button in [previous, next].compactMap({ $0 }) {
-            button.superview?.bringSubviewToFront(button)
-            button.isHidden = false
-        }
-        UIView.animate(withDuration: 0.2) { self.setAlpha(1) }
-        hideTask?.cancel()
-        hideTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_200_000_000)
-            guard !Task.isCancelled, let self else { return }
-            UIView.animate(withDuration: 0.3, animations: { self.setAlpha(0) }) { _ in
-                if self.hideTask == nil || self.hideTask?.isCancelled == false {
-                    for button in [self.previous, self.next].compactMap({ $0 }) where button.alpha == 0 { button.isHidden = true }
-                }
-            }
-        }
-    }
-
-    private func setAlpha(_ alpha: CGFloat) {
-        previous?.alpha = alpha
-        next?.alpha = alpha
-    }
-
-    /// A tap on the video brings the system controls up (or hides them): these show for a few
-    /// seconds either way, so they're always there when the controls are.
-    @objc func screenTapped() {
-        show()
-    }
-
-    nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        true
-    }
-}
-
-/// A round frosted button with a white symbol, in the style of the system player's own controls.
-final class SkipButton: UIButton {
-    private let action: () -> Void
-    var onPress: (() -> Void)?
-
-    init(symbol: String, label: String, action: @escaping () -> Void) {
-        self.action = action
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
-        blur.isUserInteractionEnabled = false
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        blur.layer.cornerRadius = 24
-        blur.clipsToBounds = true
-        insertSubview(blur, at: 0)
-        NSLayoutConstraint.activate([
-            blur.leadingAnchor.constraint(equalTo: leadingAnchor),
-            blur.trailingAnchor.constraint(equalTo: trailingAnchor),
-            blur.topAnchor.constraint(equalTo: topAnchor),
-            blur.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-        setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)), for: .normal)
-        tintColor = .white
-        if let imageView { bringSubviewToFront(imageView) }
-        accessibilityLabel = label
-        addTarget(self, action: #selector(pressed), for: .touchUpInside)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var isEnabled: Bool {
-        didSet { imageView?.alpha = isEnabled ? 1 : 0.35 }
-    }
-
-    override var isHighlighted: Bool {
-        didSet { transform = isHighlighted ? CGAffineTransform(scaleX: 0.9, y: 0.9) : .identity }
-    }
-
-    @objc private func pressed() {
-        onPress?()
-        action()
     }
 }
 
