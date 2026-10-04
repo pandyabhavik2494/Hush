@@ -61,6 +61,11 @@ final class VideoPlayback {
         didSet { UserDefaults.standard.set(gravity.rawValue, forKey: Keys.gravity) }
     }
 
+    /// Upscale and lightly sharpen the picture (on by default, remembered).
+    var enhance: Bool {
+        didSet { UserDefaults.standard.set(enhance, forKey: Keys.enhance) }
+    }
+
     var volume: Double {
         didSet {
             player.volume = Float(volume)
@@ -80,6 +85,7 @@ final class VideoPlayback {
     private enum Keys {
         static let gravity = "hush.mac.videoGravity"
         static let volume = "hush.mac.videoVolume"
+        static let enhance = "hush.mac.videoEnhance"
     }
 
     var isShowing: Bool { current != nil }
@@ -87,6 +93,7 @@ final class VideoPlayback {
 
     private init() {
         gravity = VideoGravity(rawValue: UserDefaults.standard.string(forKey: Keys.gravity) ?? "") ?? .fill
+        enhance = UserDefaults.standard.object(forKey: Keys.enhance) as? Bool ?? true
         volume = UserDefaults.standard.object(forKey: Keys.volume) as? Double ?? 1
         player.volume = Float(volume)
         observePlayer()
@@ -276,15 +283,50 @@ final class VideoPlayback {
 
 // MARK: - The video surface
 
-/// The video picture: an AVPlayerLayer that follows the Fit / Fill / Zoom setting, plus Picture in
-/// Picture.
+/// The video picture. Underneath, an AVPlayerLayer that follows Fit / Fill / Zoom (and drives
+/// Picture in Picture); with Enhance on, a Metal layer on top shows each frame upscaled and lightly
+/// sharpened (VideoEnhancer). If enhancement can't run, the Metal layer simply stays hidden and the
+/// plain picture shows.
 struct VideoSurface: NSViewRepresentable {
     let player: AVPlayer
     let gravity: VideoGravity
+    let enhance: Bool
     @Binding var pictureInPicture: AVPictureInPictureController?
 
     final class SurfaceView: NSView {
         let playerLayer = AVPlayerLayer()
+        private let metalLayer = CAMetalLayer()
+        private var enhancer: VideoEnhancer?
+        private var enhancerFailed = false
+        private var output: AVPlayerItemVideoOutput?
+        private weak var outputItem: AVPlayerItem?
+        private var itemObservation: NSKeyValueObservation?
+        private var link: CADisplayLink?
+        private var frame_: CVPixelBuffer?
+        private var needsRedraw = false
+        private var inFlight = 0
+        private var superResolution: AnyObject?
+        private var superResolutionBusy = false
+        // Timing, logged every few seconds while enhancing.
+        private var gpuTimes: [Double] = []
+        private var lateFrames = 0
+
+        var gravity: VideoGravity = .fill {
+            didSet { if gravity != oldValue { needsLayout = true; needsRedraw = true } }
+        }
+
+        var enhance = false {
+            didSet { if enhance != oldValue { updateEnhancement() } }
+        }
+
+        weak var player: AVPlayer? {
+            didSet {
+                playerLayer.player = player
+                itemObservation = player?.observe(\.currentItem, options: [.initial, .new]) { [weak self] player, _ in
+                    DispatchQueue.main.async { self?.attachOutput(to: player.currentItem) }
+                }
+            }
+        }
 
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -293,13 +335,15 @@ struct VideoSurface: NSViewRepresentable {
             layer?.backgroundColor = NSColor.black.cgColor
             layer?.masksToBounds = true
             layer?.addSublayer(playerLayer)
+            metalLayer.pixelFormat = .bgra8Unorm
+            metalLayer.framebufferOnly = true
+            metalLayer.isOpaque = true
+            metalLayer.isHidden = true
+            metalLayer.actions = ["bounds": NSNull(), "position": NSNull(), "contents": NSNull(), "hidden": NSNull()]
+            layer?.addSublayer(metalLayer)
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-        var zoom: CGFloat = 1 {
-            didSet { needsLayout = true }
-        }
 
         override func layout() {
             super.layout()
@@ -307,16 +351,185 @@ struct VideoSurface: NSViewRepresentable {
             CATransaction.setAnimationDuration(0.35)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
             playerLayer.frame = bounds
-            playerLayer.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
+            playerLayer.videoGravity = gravity.layerGravity
+            playerLayer.setAffineTransform(CGAffineTransform(scaleX: gravity.scale, y: gravity.scale))
             CATransaction.commit()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            metalLayer.frame = bounds
+            let scale = window?.backingScaleFactor ?? 2
+            metalLayer.contentsScale = scale
+            metalLayer.drawableSize = CGSize(width: max(bounds.width * scale, 1), height: max(bounds.height * scale, 1))
+            CATransaction.commit()
+            needsRedraw = true
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            updateEnhancement()
+        }
+
+        // MARK: Enhancement on and off
+
+        private func updateEnhancement() {
+            guard enhance, !enhancerFailed, window != nil else {
+                link?.invalidate()
+                link = nil
+                metalLayer.isHidden = true
+                return
+            }
+            if enhancer == nil {
+                enhancer = VideoEnhancer()
+                if enhancer == nil {
+                    enhancerFailed = true
+                    hushLog.info("Enhance: not available on this Mac; plain picture")
+                    return
+                }
+                metalLayer.device = enhancer?.device
+            }
+            attachOutput(to: player?.currentItem)
+            if link == nil {
+                let link = displayLink(target: self, selector: #selector(tick(_:)))
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+            needsRedraw = true
+        }
+
+        private func attachOutput(to item: AVPlayerItem?) {
+            guard enhance, !enhancerFailed else { return }
+            if let outputItem, let output, outputItem !== item { outputItem.remove(output) }
+            guard let item, item !== outputItem else { return }
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: VideoEnhancer.pixelBufferAttributes)
+            item.add(output)
+            self.output = output
+            outputItem = item
+            frame_ = nil
+            superResolution = nil
+            metalLayer.isHidden = true
+        }
+
+        /// Turns enhancement off for good (something failed): the plain picture takes over.
+        private func fallBack(_ reason: String) {
+            hushLog.info("Enhance: \(reason, privacy: .public); plain picture")
+            enhancerFailed = true
+            link?.invalidate()
+            link = nil
+            metalLayer.isHidden = true
+        }
+
+        // MARK: Frames
+
+        @objc private func tick(_ link: CADisplayLink) {
+            guard let output else { return }
+            // With super resolution in the loop, ask for the frame one refresh ahead, so it's ready
+            // when it's due and the picture stays in sync with the sound.
+            let lookahead = superResolution != nil ? link.duration : 0
+            let itemTime = output.itemTime(forHostTime: link.targetTimestamp + lookahead)
+            if output.hasNewPixelBuffer(forItemTime: itemTime),
+               let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
+                if #available(macOS 26.0, *), let upscaler = upscaler(for: buffer), upscaler.isReady, !superResolutionBusy {
+                    superResolutionBusy = true
+                    upscaler.process(buffer, time: itemTime) { [weak self] upscaled in
+                        DispatchQueue.main.async {
+                            guard let self else { return }
+                            self.superResolutionBusy = false
+                            self.frame_ = upscaled ?? buffer
+                            self.render()
+                        }
+                    }
+                } else {
+                    frame_ = buffer
+                    render()
+                }
+            } else if needsRedraw, frame_ != nil {
+                render()
+            }
+        }
+
+        @available(macOS 26.0, *)
+        private func upscaler(for buffer: CVPixelBuffer) -> RealTimeSuperResolution? {
+            let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+            if let existing = superResolution as? RealTimeSuperResolution {
+                return existing.inputWidth == width && existing.inputHeight == height ? existing : nil
+            }
+            guard width <= 960, height <= 960, RealTimeSuperResolution.supports(width: width, height: height) else { return nil }
+            let made = RealTimeSuperResolution(width: width, height: height)
+            superResolution = made
+            return made
+        }
+
+        private func render() {
+            guard let enhancer, let frame = frame_, !metalLayer.drawableSize.equalTo(.zero) else { return }
+            guard inFlight < 2 else {
+                lateFrames += 1
+                return
+            }
+            guard let drawable = metalLayer.nextDrawable(), let commandBuffer = enhancer.queue.makeCommandBuffer() else { return }
+            needsRedraw = false
+            let target = drawable.texture
+            let rect = displayRect(for: frame, in: CGSize(width: target.width, height: target.height))
+            guard enhancer.encode(source: frame, into: target, displayRect: rect, enhance: true, commandBuffer: commandBuffer) else {
+                fallBack("frame couldn't be drawn")
+                return
+            }
+            inFlight += 1
+            commandBuffer.present(drawable)
+            commandBuffer.addCompletedHandler { [weak self] buffer in
+                let ms = (buffer.gpuEndTime - buffer.gpuStartTime) * 1000
+                let failed = buffer.status == .error
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.inFlight -= 1
+                    if failed { self.fallBack("GPU error"); return }
+                    if self.metalLayer.isHidden, self.enhance { self.metalLayer.isHidden = false }
+                    self.record(ms)
+                }
+            }
+            commandBuffer.commit()
+        }
+
+        /// Where the picture goes in the drawable (pixels, top-left origin) for Fit / Fill / Zoom,
+        /// using the item's display aspect (so anamorphic video is right too).
+        private func displayRect(for frame: CVPixelBuffer, in size: CGSize) -> CGRect {
+            var aspect = CGSize(width: CVPixelBufferGetWidth(frame), height: CVPixelBufferGetHeight(frame))
+            if let presentation = outputItem?.presentationSize, presentation.width > 0, presentation.height > 0 {
+                aspect = presentation
+            }
+            let fit = min(size.width / aspect.width, size.height / aspect.height)
+            let fill = max(size.width / aspect.width, size.height / aspect.height)
+            let scale: CGFloat
+            switch gravity {
+            case .fit: scale = fit
+            case .fill: scale = fill
+            case .zoom: scale = fill * gravity.scale
+            }
+            let width = aspect.width * scale, height = aspect.height * scale
+            return CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2, width: width, height: height)
+        }
+
+        private func record(_ ms: Double) {
+            gpuTimes.append(ms)
+            guard gpuTimes.count >= 300 else { return }
+            let average = gpuTimes.reduce(0, +) / Double(gpuTimes.count)
+            let worst = gpuTimes.max() ?? 0
+            let size = metalLayer.drawableSize
+            hushLog.info("Enhance: GPU \(String(format: "%.2f", average), privacy: .public) ms avg, \(String(format: "%.2f", worst), privacy: .public) ms max over 300 frames at \(Int(size.width), privacy: .public)x\(Int(size.height), privacy: .public); late frames \(self.lateFrames, privacy: .public); super resolution \(self.superResolution != nil, privacy: .public)")
+            gpuTimes.removeAll(keepingCapacity: true)
+            lateFrames = 0
+        }
+
+        deinit {
+            link?.invalidate()
+            if let outputItem, let output { outputItem.remove(output) }
         }
     }
 
     func makeNSView(context: Context) -> SurfaceView {
         let view = SurfaceView()
-        view.playerLayer.player = player
-        view.playerLayer.videoGravity = gravity.layerGravity
-        view.zoom = gravity.scale
+        view.player = player
+        view.gravity = gravity
+        view.enhance = enhance
         if AVPictureInPictureController.isPictureInPictureSupported() {
             let controller = AVPictureInPictureController(playerLayer: view.playerLayer)
             DispatchQueue.main.async { pictureInPicture = controller }
@@ -325,11 +538,8 @@ struct VideoSurface: NSViewRepresentable {
     }
 
     func updateNSView(_ view: SurfaceView, context: Context) {
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.35)
-        view.playerLayer.videoGravity = gravity.layerGravity
-        CATransaction.commit()
-        view.zoom = gravity.scale
+        view.gravity = gravity
+        view.enhance = enhance
     }
 }
 
@@ -346,7 +556,7 @@ struct VideoPlayerView: View {
         @Bindable var playback = playback
         ZStack {
             Color.black
-            VideoSurface(player: playback.player, gravity: playback.gravity, pictureInPicture: $pictureInPicture)
+            VideoSurface(player: playback.player, gravity: playback.gravity, enhance: playback.enhance, pictureInPicture: $pictureInPicture)
                 .onTapGesture(count: 2) { toggleFullScreen() }
                 .onTapGesture { playback.togglePlayPause() }
 
@@ -488,6 +698,7 @@ struct VideoPlayerView: View {
 
                 HStack(spacing: 14) {
                     mediaOptionsMenu
+                    enhanceToggle
                     gravityPicker
                     if let pictureInPicture {
                         Button { pictureInPicture.startPictureInPicture() } label: {
@@ -536,6 +747,23 @@ struct VideoPlayerView: View {
         .background(Capsule().fill(.white.opacity(0.10)))
         .help("Fit, Fill or Zoom (Z)")
         .animation(.easeOut(duration: 0.15), value: playback.gravity)
+    }
+
+    private var enhanceToggle: some View {
+        Button {
+            playback.enhance.toggle()
+        } label: {
+            Label("Enhance", systemImage: "sparkles")
+                .font(HushStyle.rounded(11.5, weight: .semibold))
+                .foregroundStyle(playback.enhance ? HushStyle.paper : .white.opacity(0.85))
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(Capsule().fill(playback.enhance ? HushStyle.gold : .white.opacity(0.10)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(playback.enhance ? "Enhance is on: sharper upscaling (E)" : "Enhance is off (E)")
+        .animation(.easeOut(duration: 0.15), value: playback.enhance)
     }
 
     private var mediaOptionsMenu: some View {
