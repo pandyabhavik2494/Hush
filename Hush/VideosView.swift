@@ -6,49 +6,65 @@ import UIKit
 
 // MARK: - Tile
 
-/// One video in the Videos tab: a 16:9 still with its length, and the title underneath.
+/// One video in the Videos tab: a 16:9 still with its title written across the bottom and its
+/// length in the corner, so the tiles can sit right next to each other.
 struct VideoTile: View {
     let video: LibraryVideo
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            VideoThumbnail(video: video)
-                .overlay(alignment: .bottomTrailing) {
-                    if let length = Self.lengthText(video.duration) {
-                        Text(length)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .padding(6)
-                    }
+        VideoThumbnail(video: video)
+            .overlay {
+                // A soft dark fade at the bottom keeps the white title readable on bright stills.
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.78), location: 0),
+                        .init(color: .black.opacity(0.35), location: 0.38),
+                        .init(color: .clear, location: 0.62),
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomLeading) {
+                Text(video.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+            }
+            .overlay(alignment: .topTrailing) {
+                if let length = Self.lengthText(video.duration) {
+                    Text(length)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .padding(6)
                 }
-                .overlay(alignment: .topTrailing) {
-                    // Not on this iPhone (still in the cloud) or copy-protected: can't be played here.
-                    if video.assetURL == nil {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(6)
-                            .background(.black.opacity(0.62), in: Circle())
-                            .padding(6)
-                    }
+            }
+            .overlay(alignment: .topLeading) {
+                // Not on this iPhone (still in the cloud) or copy-protected: can't be played here.
+                if video.assetURL == nil {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(5)
+                        .background(.black.opacity(0.55), in: Circle())
+                        .padding(6)
                 }
-
-            Text(video.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(HushStyle.ink)
-                .lineLimit(2, reservesSpace: true)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 2)
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(video.artist.map { "\(video.title), \($0)" } ?? video.title)
-        .accessibilityHint(video.assetURL == nil ? "Not downloaded to this iPhone" : "Plays the video")
-        .accessibilityAddTraits(.isButton)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(video.artist.map { "\(video.title), \($0)" } ?? video.title)
+            .accessibilityHint(video.assetURL == nil ? "Not downloaded to this iPhone" : "Plays the video")
+            .accessibilityAddTraits(.isButton)
     }
 
     /// "4:41" or "1:02:07"; nil when the length isn't known.
@@ -188,7 +204,7 @@ struct VideoThumbnail: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .animation(.easeOut(duration: 0.2), value: image != nil)
             .task(id: video.id) {
                 guard image == nil else { return }
