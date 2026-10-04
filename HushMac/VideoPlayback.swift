@@ -125,15 +125,32 @@ final class VideoPlayback {
         }
     }
 
-    /// Next video in the list, or close at the end.
+    /// The video ended: the next one in the list, or close at the end.
     private func advance() {
-        if index + 1 < queue.count {
-            index += 1
-            let video = queue[index]
-            if let url = video.location { start(url: url, video: video) }
-        } else {
-            close()
+        if hasNext { next() } else { close() }
+    }
+
+    var hasNext: Bool { index + 1 < queue.count }
+    /// Previous is available if there's an earlier video, or to restart this one once it's a few seconds in.
+    var canGoBack: Bool { index > 0 || currentTime > 3 }
+
+    /// The next playable video in the list it was opened from.
+    func next() {
+        guard hasNext else { return }
+        index += 1
+        let video = queue[index]
+        if let url = video.location { start(url: url, video: video) }
+    }
+
+    /// Restarts the video if it's more than 3 seconds in; otherwise the previous one in the list.
+    func previous() {
+        if currentTime > 3 || index == 0 {
+            seek(to: 0)
+            return
         }
+        index -= 1
+        let video = queue[index]
+        if let url = video.location { start(url: url, video: video) }
     }
 
     func close() {
@@ -433,6 +450,13 @@ struct VideoPlayerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 22) {
+                    Button { playback.previous() } label: {
+                        Image(systemName: "backward.end.fill").font(.system(size: 17))
+                    }
+                    .buttonStyle(HushIconButtonStyle(idle: .white.opacity(0.9), hover: .white))
+                    .disabled(!playback.canGoBack)
+                    .opacity(playback.canGoBack ? 1 : 0.35)
+                    .help("Previous (⌘←)")
                     Button { playback.skip(by: -10) } label: {
                         Image(systemName: "gobackward.10").font(.system(size: 20, weight: .medium))
                     }
@@ -453,6 +477,13 @@ struct VideoPlayerView: View {
                     }
                     .buttonStyle(HushIconButtonStyle(idle: .white.opacity(0.9), hover: .white))
                     .help("Forward 10 seconds (→)")
+                    Button { playback.next() } label: {
+                        Image(systemName: "forward.end.fill").font(.system(size: 17))
+                    }
+                    .buttonStyle(HushIconButtonStyle(idle: .white.opacity(0.9), hover: .white))
+                    .disabled(!playback.hasNext)
+                    .opacity(playback.hasNext ? 1 : 0.35)
+                    .help("Next (⌘→)")
                 }
 
                 HStack(spacing: 14) {

@@ -68,12 +68,17 @@ struct HushCommands: Commands {
         CommandMenu("Controls") {
             Button(player.isPlaying ? "Pause" : "Play") { player.togglePlayPause() }
                 .disabled(player.current == nil)
-            Button("Next Song") { player.next() }
-                .keyboardShortcut(.rightArrow, modifiers: .command)
-                .disabled(player.current == nil)
-            Button("Previous Song") { player.previous() }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
-                .disabled(player.current == nil)
+            // While a video is open these move through the videos instead.
+            Button(video.isShowing ? "Next Video" : "Next Song") {
+                if video.isShowing { video.next() } else { player.next() }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .disabled(video.isShowing ? !video.hasNext : player.current == nil)
+            Button(video.isShowing ? "Previous Video" : "Previous Song") {
+                if video.isShowing { video.previous() } else { player.previous() }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .disabled(video.isShowing ? !video.canGoBack : player.current == nil)
             Divider()
             Button("Volume Up") { player.nudgeVolume(by: 0.08) }
                 .keyboardShortcut(.upArrow, modifiers: .command)

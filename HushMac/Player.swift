@@ -476,11 +476,17 @@ final class Player {
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.next() }
+            Task { @MainActor in
+                if VideoPlayback.shared.handlesMediaKeys { VideoPlayback.shared.next(); return }
+                self?.next()
+            }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.previous() }
+            Task { @MainActor in
+                if VideoPlayback.shared.handlesMediaKeys { VideoPlayback.shared.previous(); return }
+                self?.previous()
+            }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in

@@ -28,6 +28,7 @@ final class ArtworkStore: @unchecked Sendable {
     private var library: ITLibrary?
     private var items: [UInt64: ITLibMediaItem] = [:]
     private var locations: [UInt64: URL] = [:]
+    private var albumsByTrack: [UInt64: AlbumArtInfo] = [:]
     private var inFlight: [String: Task<SendableImage?, Never>] = [:]
     private let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
@@ -47,11 +48,18 @@ final class ArtworkStore: @unchecked Sendable {
     private let blurContext = CIContext()
 
     /// Called by the library loader. Keeps the library object alive so artwork can be read later.
-    func register(library: ITLibrary, items: [UInt64: ITLibMediaItem], locations: [UInt64: URL]) {
+    func register(library: ITLibrary, items: [UInt64: ITLibMediaItem], locations: [UInt64: URL], albums: [Album]) {
+        var byTrack: [UInt64: AlbumArtInfo] = [:]
+        for album in albums {
+            let info = AlbumArtInfo(id: album.id, title: album.title, artist: album.artist,
+                                    trackIDs: album.tracks.map(\.id), firstSongTitle: album.tracks.first?.title)
+            for track in album.tracks { byTrack[track.id] = info }
+        }
         lock.withLock {
             self.library = library
             self.items = items
             self.locations = locations
+            self.albumsByTrack = byTrack
         }
     }
 
@@ -82,20 +90,31 @@ final class ArtworkStore: @unchecked Sendable {
         return image
     }
 
+    /// The library's artwork for this track; else another track of the same album that has some;
+    /// else art embedded in the file; else (songs only) the album's cover from Apple's catalog.
     private func decode(id: UInt64, pixels: Int, kind: Kind) async -> SendableImage? {
-        let (item, location) = lock.withLock { (items[id], locations[id]) }
+        let (item, location, album) = lock.withLock { (items[id], locations[id], albumsByTrack[id]) }
         if kind == .videoStill, let location, let still = await Self.videoFrame(from: location, pixels: pixels) {
             return SendableImage(image: still)
         }
-        var data: Data?
-        if let artwork = item?.artwork {
-            data = artwork.imageData ?? artwork.image?.tiffRepresentation
+        var data = Self.libraryArtwork(item)
+        if data == nil, let album {
+            let siblings = lock.withLock { album.trackIDs.filter { $0 != id }.compactMap { items[$0] } }
+            data = siblings.lazy.compactMap(Self.libraryArtwork).first
         }
         if data == nil, let location {
             data = await Self.embeddedArtwork(in: location)
         }
+        if data == nil, let album {
+            data = await CatalogArtwork.shared.cover(albumID: album.id, title: album.title, artist: album.artist, songTitle: album.firstSongTitle)
+        }
         guard let data, let image = Self.thumbnail(from: data, pixels: pixels) else { return nil }
         return SendableImage(image: image)
+    }
+
+    private static func libraryArtwork(_ item: ITLibMediaItem?) -> Data? {
+        guard let item, item.hasArtworkAvailable, let artwork = item.artwork else { return nil }
+        return artwork.imageData ?? artwork.image?.tiffRepresentation
     }
 
     /// Cover art stored inside the file itself (used when the library has none).
@@ -178,6 +197,15 @@ final class ArtworkStore: @unchecked Sendable {
         if let made { colorCache.setObject(made, forKey: NSNumber(value: id)) }
         return made
     }
+}
+
+/// What the artwork loader needs to know about a song's album to find a cover for it.
+struct AlbumArtInfo: Sendable {
+    let id: UInt64
+    let title: String
+    let artist: String
+    let trackIDs: [UInt64]
+    let firstSongTitle: String?
 }
 
 /// A cover's edge colours and how bright each is (0 = black … 1 = white).

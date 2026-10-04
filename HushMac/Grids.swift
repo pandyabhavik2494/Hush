@@ -526,7 +526,7 @@ struct MoviesGrid: View {
             } else {
                 TileGrid(items: movies, minimumWidth: 150, isMosaic: !showsTitles, spacing: (20, 26),
                          letter: sort == .alphabetical && query.isEmpty ? { $0.sectionLetter } : nil) { movie in
-                    MovieTile(movie: movie, showsTitle: showsTitles) { playback.play(movie) }
+                    MovieTile(movie: movie, showsTitle: showsTitles) { playback.play(movie, in: movies) }
                 }
             }
         }

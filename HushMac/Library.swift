@@ -391,10 +391,9 @@ enum LibraryLoader {
             if let location = movie.location { locations[movie.id] = location }
         }
 
-        ArtworkStore.shared.register(library: library, items: artworkSources, locations: locations)
-
         let songs = tracks.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         let albums = buildAlbums(from: tracks)
+        ArtworkStore.shared.register(library: library, items: artworkSources, locations: locations, albums: albums)
         let artists = buildArtists(from: albums)
         let tracksByID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let playlists = buildPlaylists(from: library, tracksByID: tracksByID)
