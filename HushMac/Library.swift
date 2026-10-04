@@ -196,14 +196,31 @@ final class LibraryModel {
         reload()
     }
 
+    /// Bumped by a manual refresh so posters and covers that weren't found before are asked for again.
+    private(set) var artworkGeneration = 0
+
+    /// The Refresh button and ⌘R: songs, albums, artists, playlists, music videos, your movies and the
+    /// Apple TV movies and shows, all re-read from the Music and TV apps; artist photos and posters
+    /// that weren't found before are tried again. Playback and the page you're on stay as they are.
+    func refreshEverything() {
+        reload()
+        Task {
+            await ArtistPhotoService.shared.forgetMisses()
+            await PosterStore.shared.forgetMisses()
+            artworkGeneration &+= 1
+        }
+    }
+
     /// Reads the whole Music library in the background.
     func reload() {
         guard !isRefreshing else { return }
         isRefreshing = true
         if songs.isEmpty { status = .loading }
+        // Every load after the first asks the library to re-read the Music and TV apps' data.
+        let fresh = lastLoad != nil
         Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<LibrarySnapshot, Error> in
-                do { return .success(try await LibraryLoader.load()) } catch { return .failure(error) }
+                do { return .success(try await LibraryLoader.load(fresh: fresh)) } catch { return .failure(error) }
             }.value
             self.isRefreshing = false
             self.lastLoad = Date()
@@ -361,8 +378,13 @@ enum LibraryLoader {
 
     /// Reads every downloaded song, video, movie and playlist from the Music and TV libraries.
     /// Runs off the main thread.
-    static func load() async throws -> LibrarySnapshot {
+    static func load(fresh: Bool = false) async throws -> LibrarySnapshot {
         let library = try ITLibrary(apiVersion: "1.1")
+        // A new ITLibrary in the same process hands back the data it read before (so newly added
+        // music videos, songs or purchases didn't show) until it's told to read again.
+        if fresh, !library.reloadData() {
+            hushLog.info("The Music library didn't re-read; showing what it had")
+        }
 
         var tracks: [Track] = []
         var videos: [Video] = []

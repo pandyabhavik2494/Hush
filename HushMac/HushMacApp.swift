@@ -54,8 +54,7 @@ struct HushCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Refresh Library") {
-                library.reload()
-                Task { await ArtistPhotoService.shared.forgetMisses() }
+                library.refreshEverything()
             }
             .keyboardShortcut("r", modifiers: .command)
         }
@@ -69,16 +68,16 @@ struct HushCommands: Commands {
             Button(player.isPlaying ? "Pause" : "Play") { player.togglePlayPause() }
                 .disabled(player.current == nil)
             // While a video is open these move through the videos instead.
-            Button(video.isShowing ? "Next Video" : "Next Song") {
-                if video.isShowing { video.next() } else { player.next() }
+            Button(video.handlesMediaKeys ? "Next Video" : "Next Song") {
+                if video.handlesMediaKeys { video.next() } else { player.next() }
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
-            .disabled(video.isShowing ? !video.hasNext : player.current == nil)
-            Button(video.isShowing ? "Previous Video" : "Previous Song") {
-                if video.isShowing { video.previous() } else { player.previous() }
+            .disabled(video.handlesMediaKeys ? !video.hasNext : player.current == nil)
+            Button(video.handlesMediaKeys ? "Previous Video" : "Previous Song") {
+                if video.handlesMediaKeys { video.previous() } else { player.previous() }
             }
             .keyboardShortcut(.leftArrow, modifiers: .command)
-            .disabled(video.isShowing ? !video.canGoBack : player.current == nil)
+            .disabled(video.handlesMediaKeys ? !video.canGoBack : player.current == nil)
             Divider()
             Button("Volume Up") { player.nudgeVolume(by: 0.08) }
                 .keyboardShortcut(.upArrow, modifiers: .command)
@@ -199,8 +198,9 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Space plays and pauses anywhere (except while typing). In the video player: Esc closes it,
-    /// Z cycles Fit / Fill / Zoom, F toggles full screen, ← and → skip 10 seconds. Esc also closes
-    /// Now Playing.
+    /// Z cycles Fit / Fill / Zoom, F toggles full screen, P starts Picture in Picture, ← and → skip
+    /// 10 seconds. Esc also closes Now Playing. While a video floats in Picture in Picture, Space
+    /// plays and pauses it.
     static func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
         let isTyping = NSApp.keyWindow?.firstResponder is NSText
@@ -218,6 +218,7 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
                     window.toggleFullScreen(nil)
                 }
                 return true
+            case 35: video.startPictureInPicture(); return true            // P
             case 123: video.skip(by: -10); return true                     // ←
             case 124: video.skip(by: 10); return true                      // →
             default: break
@@ -226,6 +227,9 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
 
         guard modifiers.isEmpty, !isTyping else { return false }
         switch event.keyCode {
+        case 49 where video.isInPictureInPicture:
+            video.togglePlayPause()
+            return true
         case 49:
             guard Player.shared.current != nil else { return false }
             Player.shared.togglePlayPause()

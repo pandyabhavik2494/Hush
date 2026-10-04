@@ -459,8 +459,7 @@ struct SidebarView: View {
                 .lineLimit(1)
             Spacer(minLength: 4)
             Button {
-                library.reload()
-                Task { await ArtistPhotoService.shared.forgetMisses() }
+                library.refreshEverything()
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 12, weight: .semibold))

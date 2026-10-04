@@ -69,6 +69,19 @@ final class VideoPlayback {
     }
 
     let player = AVPlayer()
+    /// The one layer the video draws into. It belongs to the playback (not the player page) so Picture
+    /// in Picture keeps going while the page is closed.
+    let playerLayer = AVPlayerLayer()
+    /// The video is in Apple's floating Picture in Picture window; the player page steps aside.
+    private(set) var isInPictureInPicture = false
+    /// Whether Picture in Picture can start right now (the video is loaded and showing).
+    private(set) var canStartPictureInPicture = false
+
+    @ObservationIgnored private var pictureInPicture: AVPictureInPictureController?
+    @ObservationIgnored private var pictureInPictureDelegate: PictureInPictureDelegate?
+    @ObservationIgnored private var pictureInPictureObservation: NSKeyValueObservation?
+    /// Set while the video comes back from Picture in Picture into the player page.
+    @ObservationIgnored private var isRestoringFromPictureInPicture = false
 
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -82,14 +95,17 @@ final class VideoPlayback {
         static let volume = "hush.mac.videoVolume"
     }
 
-    var isShowing: Bool { current != nil }
+    /// The full-window player page is up (not while the video floats in Picture in Picture).
+    var isShowing: Bool { current != nil && !isInPictureInPicture }
     var handlesMediaKeys: Bool { current != nil }
 
     private init() {
         gravity = VideoGravity(rawValue: UserDefaults.standard.string(forKey: Keys.gravity) ?? "") ?? .fill
         volume = UserDefaults.standard.object(forKey: Keys.volume) as? Double ?? 1
         player.volume = Float(volume)
+        playerLayer.player = player
         observePlayer()
+        setUpPictureInPicture()
     }
 
     // MARK: Starting and stopping
@@ -154,6 +170,8 @@ final class VideoPlayback {
     }
 
     func close() {
+        if isInPictureInPicture { pictureInPicture?.stopPictureInPicture() }
+        isInPictureInPicture = false
         player.pause()
         player.replaceCurrentItem(with: nil)
         isPlaying = false
@@ -210,6 +228,59 @@ final class VideoPlayback {
 
     func cycleGravity() {
         gravity = gravity.next
+    }
+
+    // MARK: Picture in Picture
+
+    private func setUpPictureInPicture() {
+        guard AVPictureInPictureController.isPictureInPictureSupported(),
+              let controller = AVPictureInPictureController(playerLayer: playerLayer) else { return }
+        let delegate = PictureInPictureDelegate()
+        controller.delegate = delegate
+        pictureInPicture = controller
+        pictureInPictureDelegate = delegate
+        pictureInPictureObservation = controller.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { controller, _ in
+            let possible = controller.isPictureInPicturePossible
+            Task { @MainActor in VideoPlayback.shared.canStartPictureInPicture = possible }
+        }
+    }
+
+    /// Pops the video into Apple's floating window. It stays on top while Hush is minimised, hidden
+    /// or behind other apps; its restore button brings the video back into Hush.
+    func startPictureInPicture() {
+        guard let pictureInPicture, pictureInPicture.isPictureInPicturePossible else { return }
+        pictureInPicture.startPictureInPicture()
+    }
+
+    fileprivate func pictureInPictureWillStart() {
+        isInPictureInPicture = true
+        // Back to the library in a normal window, like the TV app.
+        if enteredFullScreen, let window = NSApp.windows.first(where: { $0.styleMask.contains(.fullScreen) }) {
+            window.toggleFullScreen(nil)
+        }
+        enteredFullScreen = false
+    }
+
+    fileprivate func restoreFromPictureInPicture(_ completion: @escaping (Bool) -> Void) {
+        isRestoringFromPictureInPicture = true
+        isInPictureInPicture = false
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first { $0.identifier?.rawValue.contains("main") == true }?.makeKeyAndOrderFront(nil)
+        // Let the player page put the layer back in the window before the video flies home.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(true) }
+    }
+
+    fileprivate func pictureInPictureDidStop() {
+        defer { isRestoringFromPictureInPicture = false }
+        guard !isRestoringFromPictureInPicture else { return }
+        // Closed from the floating window: the video ends there, like the TV app.
+        isInPictureInPicture = false
+        if current != nil { close() }
+    }
+
+    fileprivate func pictureInPictureFailed(_ message: String) {
+        hushLog.error("Picture in Picture failed: \(message, privacy: .public)")
+        isInPictureInPicture = false
     }
 
     // MARK: Subtitles and audio
@@ -274,24 +345,56 @@ final class VideoPlayback {
     }
 }
 
+/// Forwards Picture in Picture events to the playback (on the main thread, wherever AVKit calls from).
+private final class PictureInPictureDelegate: NSObject, AVPictureInPictureControllerDelegate {
+    private func onMain(_ work: @escaping @MainActor @Sendable () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(work)
+        } else {
+            DispatchQueue.main.async { MainActor.assumeIsolated(work) }
+        }
+    }
+
+    func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        onMain { VideoPlayback.shared.pictureInPictureWillStart() }
+    }
+
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+    ) {
+        nonisolated(unsafe) let completion = completionHandler
+        onMain { VideoPlayback.shared.restoreFromPictureInPicture(completion) }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        onMain { VideoPlayback.shared.pictureInPictureDidStop() }
+    }
+
+    func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        let message = error.localizedDescription
+        onMain { VideoPlayback.shared.pictureInPictureFailed(message) }
+    }
+}
+
 // MARK: - The video surface
 
-/// The video picture: an AVPlayerLayer that follows the Fit / Fill / Zoom setting, plus Picture in
-/// Picture.
+/// The video picture: the playback's AVPlayerLayer, following the Fit / Fill / Zoom setting.
 struct VideoSurface: NSViewRepresentable {
-    let player: AVPlayer
+    let playerLayer: AVPlayerLayer
     let gravity: VideoGravity
-    @Binding var pictureInPicture: AVPictureInPictureController?
 
     final class SurfaceView: NSView {
-        let playerLayer = AVPlayerLayer()
+        let playerLayer: AVPlayerLayer
 
-        override init(frame: NSRect) {
-            super.init(frame: frame)
+        init(playerLayer: AVPlayerLayer) {
+            self.playerLayer = playerLayer
+            super.init(frame: .zero)
             wantsLayer = true
             layer = CALayer()
             layer?.backgroundColor = NSColor.black.cgColor
             layer?.masksToBounds = true
+            playerLayer.removeFromSuperlayer()
             layer?.addSublayer(playerLayer)
         }
 
@@ -313,14 +416,9 @@ struct VideoSurface: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> SurfaceView {
-        let view = SurfaceView()
-        view.playerLayer.player = player
+        let view = SurfaceView(playerLayer: playerLayer)
         view.playerLayer.videoGravity = gravity.layerGravity
         view.zoom = gravity.scale
-        if AVPictureInPictureController.isPictureInPictureSupported() {
-            let controller = AVPictureInPictureController(playerLayer: view.playerLayer)
-            DispatchQueue.main.async { pictureInPicture = controller }
-        }
         return view
     }
 
@@ -339,14 +437,13 @@ struct VideoPlayerView: View {
     @Environment(VideoPlayback.self) private var playback
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
-    @State private var pictureInPicture: AVPictureInPictureController?
     @State private var isOverControls = false
 
     var body: some View {
         @Bindable var playback = playback
         ZStack {
             Color.black
-            VideoSurface(player: playback.player, gravity: playback.gravity, pictureInPicture: $pictureInPicture)
+            VideoSurface(playerLayer: playback.playerLayer, gravity: playback.gravity)
                 .onTapGesture(count: 2) { toggleFullScreen() }
                 .onTapGesture { playback.togglePlayPause() }
 
@@ -489,12 +586,14 @@ struct VideoPlayerView: View {
                 HStack(spacing: 14) {
                     mediaOptionsMenu
                     gravityPicker
-                    if let pictureInPicture {
-                        Button { pictureInPicture.startPictureInPicture() } label: {
+                    if AVPictureInPictureController.isPictureInPictureSupported() {
+                        Button { playback.startPictureInPicture() } label: {
                             Image(systemName: "pip.enter").font(.system(size: 15, weight: .medium))
                         }
                         .buttonStyle(HushIconButtonStyle(idle: .white.opacity(0.85), hover: .white))
-                        .help("Picture in Picture")
+                        .disabled(!playback.canStartPictureInPicture)
+                        .opacity(playback.canStartPictureInPicture ? 1 : 0.35)
+                        .help("Picture in Picture (P)")
                     }
                     Button { toggleFullScreen() } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 14, weight: .semibold))

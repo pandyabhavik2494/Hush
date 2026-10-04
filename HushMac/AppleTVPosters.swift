@@ -218,6 +218,16 @@ actor PosterStore {
         try? image.write(to: file, options: .atomic)
     }
 
+    /// A manual refresh: titles the catalog didn't have are asked about again, and the decoded
+    /// posters are re-read (so new ones replace crops).
+    func forgetMisses() {
+        let files = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "miss" {
+            try? FileManager.default.removeItem(at: file)
+        }
+        Self.memory.removeAllObjects()
+    }
+
     // MARK: Helpers
 
     private struct CatalogResponse: Decodable {
@@ -359,7 +369,8 @@ struct PosterView: View {
 
     var body: some View {
         let key = PosterStore.key(subject, pixels: pixels)
-        let shown = (loadedKey == key ? art : nil) ?? PosterStore.cached(subject, pixels: pixels)
+        // What's on screen stays up while a refresh looks again.
+        let shown = PosterStore.cached(subject, pixels: pixels) ?? art
         Color.clear
             .aspectRatio(2 / 3, contentMode: .fit)
             .overlay {
@@ -377,7 +388,7 @@ struct PosterView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .animation(.easeOut(duration: 0.2), value: loadedKey)
-            .task(id: key) {
+            .task(id: "\(key)-\(LibraryModel.shared.artworkGeneration)") {
                 guard PosterStore.cached(subject, pixels: pixels) == nil else { return }
                 let loaded = await PosterStore.shared.art(for: subject, pixels: pixels)
                 guard !Task.isCancelled, let loaded else { return }
