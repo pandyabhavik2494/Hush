@@ -150,7 +150,7 @@ final class ArtworkStore: @unchecked Sendable {
         return queue
     }()
 
-    private static func decodeOnQueue(_ work: @escaping @Sendable () -> NSImage?) async -> NSImage? {
+    static func decodeOnQueue(_ work: @escaping @Sendable () -> NSImage?) async -> NSImage? {
         let result: SendableImage? = await withCheckedContinuation { continuation in
             decodeQueue.addOperation {
                 continuation.resume(returning: work().map(SendableImage.init(image:)))
@@ -159,7 +159,7 @@ final class ArtworkStore: @unchecked Sendable {
         return result?.image
     }
 
-    private static func thumbnail(from data: Data, pixels: Int) -> NSImage? {
+    static func thumbnail(from data: Data, pixels: Int) -> NSImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

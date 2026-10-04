@@ -56,7 +56,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
     /// Sections whose artwork already carries the name: titles are hidden by default and the
     /// covers sit edge to edge as a mosaic. The toolbar toggle shows them.
     var hasTitleToggle: Bool {
-        self == .albums || self == .playlists || self == .movies || self == .appleTVMovies
+        self == .albums || self == .playlists || self == .movies || self == .appleTVMovies || self == .appleTVShows
     }
 
     var sortOptions: [LibrarySort] {

@@ -16,8 +16,8 @@ private struct AppleTVNote: View {
 
 // MARK: - Apple TV Movies
 
-/// Movies bought on Apple TV: 16:9 key art (the library's artwork for them), genre filters, and a
-/// click opens the movie in the TV app.
+/// Movies bought on Apple TV: posters (see PosterStore), genre filters, and a click opens the movie
+/// in the TV app.
 struct AppleTVMoviesGrid: View {
     @Environment(LibraryModel.self) private var library
     @Environment(Navigator.self) private var navigator
@@ -52,7 +52,8 @@ struct AppleTVMoviesGrid: View {
                 EmptyStateView(symbol: "appletv", title: query.isEmpty ? "No Apple TV movies" : "No matches",
                                message: query.isEmpty ? "Movies you buy or rent on Apple TV show up here." : "Try another title or genre.")
             } else {
-                TileGrid(items: movies, minimumWidth: 340, spacing: (20, showsTitles ? 26 : 22),
+                // Posters with room around them, like Movies.
+                TileGrid(items: movies, minimumWidth: 200, spacing: (20, 28),
                          letter: query.isEmpty ? { $0.sectionLetter } : nil) { movie in
                     AppleTVMovieTile(movie: movie, showsTitle: showsTitles)
                 }
@@ -96,7 +97,7 @@ struct AppleTVMovieTile: View {
             Button {
                 AppleTVHandOff.open(movie.id, title: movie.title, isDownloaded: movie.isDownloaded)
             } label: {
-                CoverView(id: movie.id, pixels: 900, cornerRadius: 10, aspectRatio: 16 / 9, placeholderSymbol: "appletv")
+                PosterView(subject: .movie(movie), pixels: 900, cornerRadius: 10)
                     .overlay {
                         if isHovering {
                             Image(systemName: "play.fill")
@@ -108,7 +109,7 @@ struct AppleTVMovieTile: View {
                                 .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
                     }
-                    .shadow(color: .black.opacity(0.45), radius: 13, y: 9)
+                    .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
             .buttonStyle(PressScaleButtonStyle())
             if showsTitle {
@@ -126,11 +127,12 @@ struct AppleTVMovieTile: View {
 
 // MARK: - Apple TV Shows
 
-/// One tile per series bought on Apple TV: the first episode's still with the show's name over a
-/// dark fade (the stills don't carry the name).
+/// One poster per series bought on Apple TV (its season art; see PosterStore). Names are hidden by
+/// default, as the art carries the show's logo; the titles toggle shows them.
 struct AppleTVShowsGrid: View {
     @Environment(LibraryModel.self) private var library
     @Environment(Navigator.self) private var navigator
+    @AppStorage("hush.mac.showTitles.appleTVShows") private var showsTitles = false
 
     var body: some View {
         let query = LibrarySearch.normalizedQuery(navigator.search(for: .appleTVShows))
@@ -146,8 +148,8 @@ struct AppleTVShowsGrid: View {
                 EmptyStateView(symbol: "tv", title: query.isEmpty ? "No Apple TV shows" : "No matches",
                                message: query.isEmpty ? "Shows you buy on Apple TV show up here." : "Try another show or episode.")
             } else {
-                TileGrid(items: shows, minimumWidth: 340, spacing: (24, 28)) { show in
-                    AppleTVShowTile(show: show)
+                TileGrid(items: shows, minimumWidth: 200, spacing: (20, 28)) { show in
+                    AppleTVShowTile(show: show, showsTitle: showsTitles)
                 }
             }
         }
@@ -156,47 +158,29 @@ struct AppleTVShowsGrid: View {
 
 struct AppleTVShowTile: View {
     let show: AppleTVShow
+    let showsTitle: Bool
     @Environment(Navigator.self) private var navigator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 navigator.show(.appleTVShow(show.id), in: .appleTVShows)
             } label: {
-                CoverView(id: show.artworkID, pixels: 900, cornerRadius: 12, aspectRatio: 16 / 9, placeholderSymbol: "tv")
-                    .overlay(alignment: .bottomLeading) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(show.seasonsText.uppercased())
-                                .font(HushStyle.rounded(10.5, weight: .bold))
-                                .tracking(0.8)
-                                .foregroundStyle(.white.opacity(0.8))
-                            Text(show.name)
-                                .font(HushStyle.serif(26))
-                                .foregroundStyle(.white)
-                                .lineLimit(2)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            LinearGradient(colors: [.black.opacity(0.75), .black.opacity(0.25), .clear],
-                                           startPoint: .bottom, endPoint: .top)
-                        )
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.5), radius: 14, y: 10)
+                PosterView(subject: .show(show), pixels: 900, cornerRadius: 10)
+                    .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
             .buttonStyle(PressScaleButtonStyle())
-            Text(show.episodesText)
-                .font(.system(size: 12))
-                .foregroundStyle(HushStyle.muted)
-                .padding(.horizontal, 2)
+            if showsTitle {
+                TileCaption(title: show.name, subtitle: show.episodesText)
+            }
         }
+        .help(showsTitle ? "" : "\(show.name) — \(show.episodesText)")
     }
 }
 
 // MARK: - Show page
 
-/// A show: a wide still, its name, seasons and episodes, an Open in the TV app button, season
+/// A show: its poster, its name, seasons and episodes, an Open in the TV app button, season
 /// filters, and the episodes (each opens in the TV app).
 struct AppleTVShowPage: View {
     let showID: String
@@ -209,7 +193,7 @@ struct AppleTVShowPage: View {
             let current = season.flatMap { seasons.contains($0) ? $0 : nil } ?? seasons.first ?? 1
             let episodes = show.episodes.filter { $0.season == current }
             CollectionLayout {
-                CoverView(id: show.artworkID, pixels: 900, cornerRadius: 16, aspectRatio: 16 / 9, placeholderSymbol: "tv")
+                PosterView(subject: .show(show), pixels: 1200, cornerRadius: 16)
                     .shadow(color: .black.opacity(0.6), radius: 30, y: 24)
                 Text(show.name)
                     .font(HushStyle.serif(36))

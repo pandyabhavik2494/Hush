@@ -14,6 +14,8 @@ struct AppleTVMovie: Identifiable, Hashable, Sendable {
     let duration: TimeInterval
     /// Downloaded to this Mac (the TV app can play it straight away); otherwise it streams.
     let isDownloaded: Bool
+    /// The downloaded file (its metadata names the movie's store ID, for the poster).
+    let location: URL?
     let searchKey: String
     let sectionLetter: String
 
@@ -76,6 +78,7 @@ enum AppleTVLibrary {
             genres: LibraryLoader.splitGenres(genre),
             duration: TimeInterval(item.totalTime) / 1000,
             isDownloaded: item.location != nil,
+            location: item.location,
             searchKey: LibrarySearch.key([title, genre]),
             sectionLetter: LibraryAlphabet.section(for: title)
         )
