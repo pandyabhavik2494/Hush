@@ -77,35 +77,6 @@ struct LibraryVideo: Identifiable {
     var year: Int?
 }
 
-/// A show bought on Apple TV, with its episodes in the phone's library. Plays in the TV app.
-struct AppleTVShowItem: Identifiable {
-    let id: String
-    let name: String
-    let episodes: [AppleTVEpisodeItem]
-    let searchKey: String
-
-    var seasons: [Int] { Array(Set(episodes.map(\.season))).sorted() }
-    /// The first episode that has a still stands in for show art (purchases carry episode stills
-    /// only, and episodes still in the cloud often have none).
-    var artworkItem: MPMediaItem? {
-        episodes.first { ($0.item.artwork?.bounds.width ?? 0) > 0 }?.item ?? episodes.first?.item
-    }
-    var episodesText: String { episodes.count == 1 ? "1 episode" : "\(episodes.count) episodes" }
-    var seasonsText: String {
-        seasons.count == 1 ? (seasons.first.map { "Season \($0)" } ?? "1 season") : "\(seasons.count) seasons"
-    }
-}
-
-struct AppleTVEpisodeItem: Identifiable {
-    let id: UInt64
-    let item: MPMediaItem
-    /// Without the "Season 1, Episode 19:" prefix.
-    let title: String
-    let season: Int
-    let number: Int
-    let duration: TimeInterval
-}
-
 /// Precomputed per-song data used by search and the A–Z index.
 struct SongInfo {
     let searchKey: String
@@ -128,8 +99,6 @@ private struct LibrarySnapshot: @unchecked Sendable {
     var artists: [MusicArtist] = []
     var videos: [LibraryVideo] = []
     var movies: [LibraryVideo] = []
-    var appleTVMovies: [LibraryVideo] = []
-    var appleTVShows: [AppleTVShowItem] = []
     /// Fingerprint of what the UI shows (songs, albums, playlists and their contents). iOS reports
     /// "library changed" even for play-count updates; if this is unchanged, nothing is redrawn.
     var signature = 0
@@ -178,9 +147,7 @@ private struct LibrarySnapshot: @unchecked Sendable {
         snapshot.playlists = Self.loadPlaylists()
         snapshot.artists = Self.buildArtists(from: albums)
         snapshot.videos = Self.loadVideos()
-        snapshot.movies = Self.loadMovies(purchases: false)
-        snapshot.appleTVMovies = Self.loadMovies(purchases: true)
-        snapshot.appleTVShows = Self.loadAppleTVShows()
+        snapshot.movies = Self.loadMovies()
         snapshot.signature = Self.signature(of: snapshot)
         return snapshot
     }
@@ -220,16 +187,15 @@ private struct LibrarySnapshot: @unchecked Sendable {
     }
 
     /// Movies in the phone's library (synced from the Mac's TV app), A–Z. Only the Movies tab shows them.
-    /// Your own movie files (`purchases: false`), or what you bought on Apple TV (`true`) — the
-    /// purchases show in their own tab and play in the TV app.
-    private static func loadMovies(purchases: Bool) -> [LibraryVideo] {
+    private static func loadMovies() -> [LibraryVideo] {
         let query = MPMediaQuery()
         query.addFilterPredicate(
             MPMediaPropertyPredicate(value: MPMediaType.movie.rawValue, forProperty: MPMediaItemPropertyMediaType)
         )
+        // Only your own movie files: Apple TV purchases (protected, or only in the cloud) belong to the TV app.
         let ownFiles = (query.items ?? []).filter { item in
-            AppleTVPurchases.isPurchase(kind: nil, isProtected: item.hasProtectedAsset,
-                                        hasLocalFile: item.assetURL != nil, isCloud: item.isCloudItem) == purchases
+            !AppleTVPurchases.isPurchase(kind: nil, isProtected: item.hasProtectedAsset,
+                                         hasLocalFile: item.assetURL != nil, isCloud: item.isCloudItem)
         }
         var movies: [LibraryVideo] = ownFiles.map { item in
             let rawTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -255,47 +221,6 @@ private struct LibrarySnapshot: @unchecked Sendable {
         return movies
     }
 
-    /// TV episodes bought on Apple TV, grouped into shows (the season bundle's name, cleaned).
-    private static func loadAppleTVShows() -> [AppleTVShowItem] {
-        let query = MPMediaQuery()
-        query.addFilterPredicate(
-            MPMediaPropertyPredicate(value: MPMediaType.tvShow.rawValue, forProperty: MPMediaItemPropertyMediaType)
-        )
-        var grouped: [String: (name: String, episodes: [AppleTVEpisodeItem])] = [:]
-        for item in query.items ?? [] where AppleTVPurchases.isPurchase(
-            kind: nil, isProtected: item.hasProtectedAsset, hasLocalFile: item.assetURL != nil, isCloud: item.isCloudItem
-        ) {
-            let raw = [item.albumTitle, item.albumArtist, item.artist]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first { !$0.isEmpty } ?? "TV Show"
-            let name = AppleTVPurchases.showName(raw)
-            let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let parsed = AppleTVPurchases.parseEpisodeTitle(title)
-            let episode = AppleTVEpisodeItem(
-                id: item.persistentID,
-                item: item,
-                title: parsed?.title ?? (title.isEmpty ? "Episode" : title),
-                season: parsed?.season ?? AppleTVPurchases.seasonNumber(in: item.albumTitle) ?? max(item.discNumber, 1),
-                number: parsed?.number ?? item.albumTrackNumber,
-                duration: item.playbackDuration
-            )
-            let key = LibrarySearch.normalizedQuery(name)
-            var entry = grouped[key] ?? (name, [])
-            entry.episodes.append(episode)
-            grouped[key] = entry
-        }
-        return grouped.map { key, entry in
-            let episodes = entry.episodes.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
-            return AppleTVShowItem(
-                id: key,
-                name: entry.name,
-                episodes: episodes,
-                searchKey: LibrarySearch.key([entry.name] + episodes.map(\.title))
-            )
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
-
     private static func signature(of snapshot: LibrarySnapshot) -> Int {
         var hasher = Hasher()
         hasher.combine(snapshot.songs.count)
@@ -310,11 +235,7 @@ private struct LibrarySnapshot: @unchecked Sendable {
             hasher.combine(playlist.name)
             for item in playlist.items { hasher.combine(item.persistentID) }
         }
-        for show in snapshot.appleTVShows {
-            hasher.combine(show.id)
-            hasher.combine(show.episodes.count)
-        }
-        for video in snapshot.videos + snapshot.movies + snapshot.appleTVMovies {
+        for video in snapshot.videos + snapshot.movies {
             hasher.combine(video.id)
             hasher.combine(video.title)
             // A video that has just finished downloading becomes playable: redraw for that too.
@@ -507,7 +428,7 @@ final class QueueModel: ObservableObject {
         return Array(entries[(currentIndex + 1)...])
     }
 
-    func showToast(_ message: String) {
+    fileprivate func showToast(_ message: String) {
         toastTask?.cancel()
         AccessibilityNotification.Announcement(message).post()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
@@ -545,9 +466,6 @@ final class MusicLibraryStore: ObservableObject {
     @Published private(set) var videos: [LibraryVideo] = []
     /// Movies from the phone's library, A–Z.
     @Published private(set) var movies: [LibraryVideo] = []
-    /// Movies and shows bought on Apple TV (play in the TV app), when the phone's library has them.
-    @Published private(set) var appleTVMovies: [LibraryVideo] = []
-    @Published private(set) var appleTVShows: [AppleTVShowItem] = []
     /// Artists you've marked as favorites (their normalized ids), remembered between launches.
     @Published private(set) var favoriteArtistIDs: Set<String> = FavoriteArtists.load()
 
@@ -776,8 +694,6 @@ final class MusicLibraryStore: ObservableObject {
         artists = snapshot.artists
         videos = snapshot.videos
         movies = snapshot.movies
-        appleTVMovies = snapshot.appleTVMovies
-        appleTVShows = snapshot.appleTVShows
         // Start fetching artist photos now, in the background, so the Artists tab is ready.
         let photoRequests = snapshot.artists.map { (key: $0.id, name: $0.name) }
         Task.detached(priority: .utility) {
