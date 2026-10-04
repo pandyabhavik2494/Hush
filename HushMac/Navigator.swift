@@ -9,6 +9,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
     case artists
     case musicVideos
     case movies
+    case youtube
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "Artists"
         case .musicVideos: return "Music Videos"
         case .movies: return "Movies"
+        case .youtube: return "YouTube"
         }
     }
 
@@ -31,6 +33,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "music.mic"
         case .musicVideos: return "play.rectangle"
         case .movies: return "film"
+        case .youtube: return "play.tv"
         }
     }
 
@@ -42,6 +45,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
         case .artists: return "Find an artist or song"
         case .musicVideos: return "Find a video"
         case .movies: return "Find a movie or genre"
+        case .youtube: return "Search YouTube"
         }
     }
 
@@ -54,6 +58,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
     var sortOptions: [LibrarySort] {
         switch self {
         case .artists: return [.alphabetical, .mostPlayed, .favorites]
+        case .youtube: return []
         default: return [.alphabetical, .mostPlayed]
         }
     }
@@ -92,6 +97,7 @@ enum Route: Hashable {
     case album(UInt64)
     case artist(String)
     case playlist(UInt64)
+    case youtubePlaylist(String)
 
     init(_ source: PlaybackSource) {
         switch source {
@@ -169,6 +175,7 @@ final class Navigator {
         showsNowPlaying = false
         VideoPlayback.shared.pauseForMusic()
         if VideoPlayback.shared.isShowing { VideoPlayback.shared.close() }
+        if YouTubePlayback.shared.isShowing { YouTubePlayback.shared.close() }
         guard location != Location(section: section) else { return }
         push(Location(section: section))
         UserDefaults.standard.set(section.rawValue, forKey: "hush.mac.section")
@@ -223,6 +230,7 @@ final class Navigator {
     /// "in" Movies): then it opens in the section it belongs to.
     private func defaultSection(for route: Route) -> LibrarySection {
         switch (route, section) {
+        case (.youtubePlaylist, _): return .youtube
         case (_, .albums), (_, .songs), (_, .artists), (_, .playlists): return section
         case (.album, _): return .albums
         case (.artist, _): return .artists

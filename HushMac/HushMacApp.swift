@@ -9,11 +9,17 @@ struct HushMacApp: App {
     @State private var navigator = Navigator.shared
     @State private var video = VideoPlayback.shared
     @State private var access = MediaAccess.shared
+    @State private var youtubeAccount = YouTubeAccount.shared
+    @State private var youtubeLibrary = YouTubeLibrary.shared
+    @State private var youtubePlayback = YouTubePlayback.shared
 
     var body: some Scene {
         Window("Hush", id: "main") {
             ContentView()
                 .hushEnvironment(library: library, player: player, navigator: navigator, video: video, access: access)
+                .environment(youtubeAccount)
+                .environment(youtubeLibrary)
+                .environment(youtubePlayback)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
@@ -206,6 +212,15 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
         let isTyping = NSApp.keyWindow?.firstResponder is NSText
         let video = VideoPlayback.shared
         let isMainWindow = NSApp.keyWindow?.identifier?.rawValue.contains("main") ?? true
+
+        // YouTube's own page handles its keys (Space, arrows, F); Esc goes back to Hush.
+        if YouTubePlayback.shared.isShowing, isMainWindow {
+            if event.keyCode == 53, modifiers.isEmpty {
+                YouTubePlayback.shared.close()
+                return true
+            }
+            return false
+        }
 
         if video.isShowing, isMainWindow, modifiers.isEmpty, !isTyping {
             switch event.keyCode {
