@@ -69,9 +69,11 @@ final class VideoPlayback {
     }
 
     let player = AVPlayer()
-    /// The one layer the video draws into. It belongs to the playback (not the player page) so Picture
-    /// in Picture keeps going while the page is closed.
-    let playerLayer = AVPlayerLayer()
+    /// The one view the video draws into (an AVPlayerLayer in a layer-backed NSView). It belongs to the
+    /// playback, not the player page, so Picture in Picture keeps going while the page is closed and
+    /// comes back to the same view; the page shows it through an NSViewRepresentable.
+    let surface = VideoSurfaceView()
+    var playerLayer: AVPlayerLayer { surface.playerLayer }
     /// The video is in Apple's floating Picture in Picture window; the player page steps aside.
     private(set) var isInPictureInPicture = false
     /// Whether Picture in Picture can start right now (the video is loaded and showing).
@@ -264,8 +266,13 @@ final class VideoPlayback {
     fileprivate func restoreFromPictureInPicture(_ completion: @escaping (Bool) -> Void) {
         isRestoringFromPictureInPicture = true
         isInPictureInPicture = false
+        // Back into Hush even when it was hidden or its window minimised.
+        NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first { $0.identifier?.rawValue.contains("main") == true }?.makeKeyAndOrderFront(nil)
+        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains("main") == true }) {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        }
         // Let the player page put the layer back in the window before the video flies home.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(true) }
     }
@@ -379,50 +386,52 @@ private final class PictureInPictureDelegate: NSObject, AVPictureInPictureContro
 
 // MARK: - The video surface
 
-/// The video picture: the playback's AVPlayerLayer, following the Fit / Fill / Zoom setting.
+/// The video picture: an AVPlayerLayer that follows the Fit / Fill / Zoom setting. Layer-backed (the view
+/// is its layer's delegate), so Picture in Picture finds this view and puts its placeholder inside it,
+/// not in SwiftUI's hosting view.
+final class VideoSurfaceView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        layer?.masksToBounds = true
+        layer?.addSublayer(playerLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func makeBackingLayer() -> CALayer { CALayer() }
+
+    var zoom: CGFloat = 1 {
+        didSet { needsLayout = true }
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.35)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        playerLayer.frame = bounds
+        playerLayer.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
+        CATransaction.commit()
+    }
+}
+
+/// Puts the playback's video view into the player page.
 struct VideoSurface: NSViewRepresentable {
-    let playerLayer: AVPlayerLayer
+    let surface: VideoSurfaceView
     let gravity: VideoGravity
 
-    final class SurfaceView: NSView {
-        let playerLayer: AVPlayerLayer
-
-        init(playerLayer: AVPlayerLayer) {
-            self.playerLayer = playerLayer
-            super.init(frame: .zero)
-            wantsLayer = true
-            layer = CALayer()
-            layer?.backgroundColor = NSColor.black.cgColor
-            layer?.masksToBounds = true
-            playerLayer.removeFromSuperlayer()
-            layer?.addSublayer(playerLayer)
-        }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-        var zoom: CGFloat = 1 {
-            didSet { needsLayout = true }
-        }
-
-        override func layout() {
-            super.layout()
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(0.35)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
-            playerLayer.frame = bounds
-            playerLayer.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
-            CATransaction.commit()
-        }
+    func makeNSView(context: Context) -> VideoSurfaceView {
+        surface.removeFromSuperview()
+        surface.playerLayer.videoGravity = gravity.layerGravity
+        surface.zoom = gravity.scale
+        return surface
     }
 
-    func makeNSView(context: Context) -> SurfaceView {
-        let view = SurfaceView(playerLayer: playerLayer)
-        view.playerLayer.videoGravity = gravity.layerGravity
-        view.zoom = gravity.scale
-        return view
-    }
-
-    func updateNSView(_ view: SurfaceView, context: Context) {
+    func updateNSView(_ view: VideoSurfaceView, context: Context) {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.35)
         view.playerLayer.videoGravity = gravity.layerGravity
@@ -443,7 +452,7 @@ struct VideoPlayerView: View {
         @Bindable var playback = playback
         ZStack {
             Color.black
-            VideoSurface(playerLayer: playback.playerLayer, gravity: playback.gravity)
+            VideoSurface(surface: playback.surface, gravity: playback.gravity)
                 .onTapGesture(count: 2) { toggleFullScreen() }
                 .onTapGesture { playback.togglePlayPause() }
 
