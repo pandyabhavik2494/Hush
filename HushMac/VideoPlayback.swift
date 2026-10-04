@@ -430,11 +430,12 @@ struct VideoSurface: NSViewRepresentable {
                let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
                 if #available(macOS 26.0, *), let upscaler = upscaler(for: buffer), upscaler.isReady, !superResolutionBusy {
                     superResolutionBusy = true
+                    let source = HandedOffPixelBuffer(buffer: buffer)
                     upscaler.process(buffer, time: itemTime) { [weak self] upscaled in
                         DispatchQueue.main.async {
                             guard let self else { return }
                             self.superResolutionBusy = false
-                            self.frame_ = upscaled ?? buffer
+                            self.frame_ = upscaled.buffer ?? source.buffer
                             self.render()
                         }
                     }

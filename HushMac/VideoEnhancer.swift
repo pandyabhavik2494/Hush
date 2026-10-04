@@ -266,6 +266,13 @@ final class VideoEnhancer {
     """
 }
 
+/// A pixel buffer handed from the frame processor's completion to the main thread. CVPixelBuffer
+/// isn't marked Sendable, but ownership passes to a single consumer and nobody else touches the
+/// buffer after it's handed over, so crossing threads here is safe.
+struct HandedOffPixelBuffer: @unchecked Sendable {
+    let buffer: CVPixelBuffer?
+}
+
 // MARK: - Real-time super resolution (small videos, macOS 26)
 
 /// VideoToolbox's low-latency super resolution at 2×, for videos up to 960×960. The session starts
@@ -311,14 +318,14 @@ final class RealTimeSuperResolution: @unchecked Sendable {
     var isReady: Bool { lock.withLock { ready && !failed } }
 
     /// Upscales one frame (asynchronously); nil if it couldn't.
-    func process(_ buffer: CVPixelBuffer, time: CMTime, completion: @escaping @Sendable (CVPixelBuffer?) -> Void) {
+    func process(_ buffer: CVPixelBuffer, time: CMTime, completion: @escaping @Sendable (HandedOffPixelBuffer) -> Void) {
         let pool: CVPixelBufferPool? = lock.withLock { ready && !failed ? self.pool : nil }
         var output: CVPixelBuffer?
         guard let pool, CVPixelBufferGetWidth(buffer) == inputWidth, CVPixelBufferGetHeight(buffer) == inputHeight,
               CVPixelBufferPoolCreatePixelBuffer(nil, pool, &output) == kCVReturnSuccess, let output,
               let source = VTFrameProcessorFrame(buffer: buffer, presentationTimeStamp: time),
               let destination = VTFrameProcessorFrame(buffer: output, presentationTimeStamp: time) else {
-            completion(nil)
+            completion(HandedOffPixelBuffer(buffer: nil))
             return
         }
         // The upscaled frame keeps the source's colour tags.
@@ -327,9 +334,9 @@ final class RealTimeSuperResolution: @unchecked Sendable {
         processor.process(parameters: parameters) { [weak self] _, error in
             if error != nil {
                 self?.lock.withLock { self?.failed = true }
-                completion(nil)
+                completion(HandedOffPixelBuffer(buffer: nil))
             } else {
-                completion(output)
+                completion(HandedOffPixelBuffer(buffer: output))
             }
         }
     }
