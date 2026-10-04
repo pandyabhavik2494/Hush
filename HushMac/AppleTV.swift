@@ -126,30 +126,40 @@ enum AppleTVLibrary {
 // MARK: - Handing off to the TV app
 
 /// Opens a purchase in the TV app: the exact movie or episode (the TV app and the library share
-/// persistent IDs, so Hush asks the TV app, through its scripting interface, to play that item).
-/// The first time, macOS asks whether Hush may control TV. If that isn't allowed, or anything
+/// persistent IDs, so Hush asks the TV app, through its scripting interface, to play that item),
+/// full screen. Hush's own playback pauses first and isn't resumed. When the player closes (playback
+/// stops, full screen ends, or the TV app quits), Hush comes back to the front on the page you left.
+/// The first time, macOS asks whether Hush may control TV; if that isn't allowed, or anything
 /// fails, the TV app simply opens.
 enum AppleTVHandOff {
     @MainActor
     static func open(_ id: UInt64, title: String, play: Bool = true) {
         Player.shared.setPlaying(false)
+        VideoPlayback.shared.pauseForMusic()
         Player.shared.showToast("Opening \(title) in the TV app")
         let persistentID = String(format: "%016llX", id)
         let verb = play ? "play" : "reveal"
+        // Play (or show) the item, bring the TV app forward, then full screen once its player is up.
         let source = """
         tell application id "com.apple.TV"
             set found to (every track of library playlist 1 whose persistent ID is "\(persistentID)")
             if (count of found) is 0 then error "not found"
             \(verb) (item 1 of found)
             activate
+            \(play ? "delay 1\n        try\n            set full screen of window 1 to true\n        end try" : "")
         end tell
         """
+        AppleTVWatcher.shared.stop()
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
-            if let error {
-                hushLog.info("TV hand-off fell back to opening the TV app: \(error.description, privacy: .public)")
-                DispatchQueue.main.async { openTVApp() }
+            DispatchQueue.main.async {
+                if let error {
+                    hushLog.info("TV hand-off fell back to opening the TV app: \(error.description, privacy: .public)")
+                    openTVApp()
+                } else if play {
+                    AppleTVWatcher.shared.start()
+                }
             }
         }
     }
@@ -158,5 +168,103 @@ enum AppleTVHandOff {
     static func openTVApp() {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TV") else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+}
+
+/// Watches the TV app after a hand-off and brings Hush back when you're done watching: playback
+/// stops, full screen ends, or the TV app quits. Gives up if you switch to Hush yourself (or after
+/// six hours). Reads the TV app's player state every couple of seconds while watching.
+@MainActor
+final class AppleTVWatcher {
+    static let shared = AppleTVWatcher()
+
+    private var timer: Timer?
+    private var observers: [NSObjectProtocol] = []
+    private var started = Date.distantPast
+    private var sawPlaying = false
+    private var sawFullScreen = false
+    private var polling = false
+    private let queue = DispatchQueue(label: "Hush TV watcher")
+
+    func start() {
+        stop()
+        started = Date()
+        let center = NSWorkspace.shared.notificationCenter
+        observers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == "com.apple.TV" else { return }
+            MainActor.assumeIsolated { AppleTVWatcher.shared.finish(reason: "TV app quit") }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier == ProcessInfo.processInfo.processIdentifier else { return }
+            // You came back to Hush yourself: nothing more to do.
+            MainActor.assumeIsolated { AppleTVWatcher.shared.stop() }
+        })
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            MainActor.assumeIsolated { AppleTVWatcher.shared.poll() }
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        observers = []
+        sawPlaying = false
+        sawFullScreen = false
+    }
+
+    private func poll() {
+        guard !polling else { return }
+        if Date().timeIntervalSince(started) > 6 * 3600 { stop(); return }
+        // Never launch the TV app just to ask about it.
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TV").first != nil else {
+            finish(reason: "TV app not running")
+            return
+        }
+        polling = true
+        queue.async {
+            var error: NSDictionary?
+            let answer = NSAppleScript(source: """
+            tell application id "com.apple.TV"
+                set ps to player state
+                if (count of windows) is 0 then return (ps as text) & "|closed"
+                set fs to full screen of window 1
+                return (ps as text) & "|" & (fs as text)
+            end tell
+            """)?.executeAndReturnError(&error).stringValue
+            DispatchQueue.main.async {
+                AppleTVWatcher.shared.polling = false
+                AppleTVWatcher.shared.handle(answer)
+            }
+        }
+    }
+
+    private func handle(_ answer: String?) {
+        guard timer != nil, let parts = answer?.split(separator: "|"), parts.count == 2 else { return }
+        let state = parts[0].trimmingCharacters(in: .whitespaces)
+        let window = parts[1].trimmingCharacters(in: .whitespaces)
+        let fullScreen = window == "true"
+        if state == "playing" { sawPlaying = true }
+        if fullScreen { sawFullScreen = true }
+        // Give the player a few seconds to start before reading anything into "stopped".
+        guard Date().timeIntervalSince(started) > 6 else { return }
+        if window == "closed" {
+            finish(reason: "TV window closed")
+        } else if sawPlaying, state == "stopped" {
+            finish(reason: "playback stopped")
+        } else if sawFullScreen, !fullScreen {
+            finish(reason: "full screen ended")
+        }
+    }
+
+    /// Brings Hush forward again, on the page you left.
+    private func finish(reason: String) {
+        guard timer != nil || !observers.isEmpty else { return }
+        hushLog.info("TV hand-off finished (\(reason, privacy: .public)); back to Hush")
+        stop()
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first { $0.identifier?.rawValue.contains("main") == true }?.makeKeyAndOrderFront(nil)
     }
 }
