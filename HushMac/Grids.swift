@@ -7,7 +7,7 @@ import SwiftUI
 /// (2 pt gutters); with titles shown it's the roomy grid. An A–Z rail on the right jumps to a letter.
 struct TileGrid<Item: Identifiable, Tile: View>: View where Item.ID: Hashable {
     let items: [Item]
-    var minimumWidth: CGFloat = 212
+    var minimumWidth: CGFloat = 270
     var isMosaic = false
     var spacing: (column: CGFloat, row: CGFloat) = (22, 26)
     /// Section letter for the A–Z rail (nil: no rail).
@@ -165,7 +165,7 @@ struct AlbumsGrid: View {
                 EmptyStateView(symbol: "square.stack", title: query.isEmpty ? "No albums yet" : "No matches",
                                message: query.isEmpty ? "Albums you download in the Music app show up here." : "Try another name.")
             } else {
-                TileGrid(items: albums, isMosaic: !showsTitles,
+                TileGrid(items: albums, spacing: (20, 28),
                          letter: sort == .alphabetical && query.isEmpty ? { $0.sectionLetter } : nil) { album in
                     AlbumTile(album: album, showsTitle: showsTitles)
                 }
@@ -187,12 +187,12 @@ struct AlbumTile: View {
             Button {
                 navigator.show(.album(album.id))
             } label: {
-                CoverView(id: album.artworkTrackID, pixels: 500, cornerRadius: showsTitle ? 9 : 4)
+                CoverView(id: album.artworkTrackID, pixels: 600, cornerRadius: 10)
                     .overlay(
-                        RoundedRectangle(cornerRadius: showsTitle ? 9 : 4, style: .continuous)
-                            .stroke(Color.white.opacity(showsTitle ? 0.05 : 0), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
                     )
-                    .shadow(color: .black.opacity(showsTitle ? 0.42 : 0), radius: 12, y: 8)
+                    .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
             .buttonStyle(PressScaleButtonStyle())
             .overlay(alignment: .topTrailing) {
@@ -234,7 +234,7 @@ struct PlaylistsGrid: View {
                 EmptyStateView(symbol: "music.note.list", title: query.isEmpty ? "No playlists yet" : "No matches",
                                message: query.isEmpty ? "Playlists you make in the Music app show up here. Hush keeps them read-only." : "Try another name.")
             } else {
-                TileGrid(items: playlists, isMosaic: !showsTitles,
+                TileGrid(items: playlists, spacing: (20, 28),
                          letter: sort == .alphabetical && query.isEmpty ? { $0.sectionLetter } : nil) { playlist in
                     PlaylistTile(playlist: playlist, showsTitle: showsTitles)
                 }
@@ -256,7 +256,7 @@ struct PlaylistTile: View {
             Button {
                 navigator.show(.playlist(playlist.id))
             } label: {
-                PlaylistCover(playlist: playlist, pixels: 500, cornerRadius: showsTitle ? 9 : 4)
+                PlaylistCover(playlist: playlist, pixels: 600, cornerRadius: 10)
                     .overlay(alignment: .bottomLeading) {
                         if !showsTitle && !PlaylistCover.hasOwnArtwork(playlist, in: library) {
                             // The mosaic doesn't carry the playlist's name the way album art does.
@@ -272,8 +272,8 @@ struct PlaylistTile: View {
                                 )
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: showsTitle ? 9 : 4, style: .continuous))
-                    .shadow(color: .black.opacity(showsTitle ? 0.42 : 0), radius: 12, y: 8)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
             }
             .buttonStyle(PressScaleButtonStyle())
             .overlay(alignment: .topTrailing) {
@@ -317,7 +317,7 @@ struct ArtistsGrid: View {
             } else {
                 TileGrid(
                     items: others,
-                    minimumWidth: 176,
+                    minimumWidth: 220,
                     spacing: (30, 26),
                     letter: sort != .mostPlayed && query.isEmpty ? { $0.sectionLetter } : nil,
                     header: favorites.isEmpty ? nil : AnyView(favoritesRow(favorites))
@@ -331,7 +331,7 @@ struct ArtistsGrid: View {
     private func favoritesRow(_ favorites: [Artist]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("FAVOURITES", color: HushStyle.gold)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 176, maximum: 330), spacing: 30, alignment: .top)], alignment: .leading, spacing: 26) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 400), spacing: 30, alignment: .top)], alignment: .leading, spacing: 26) {
                 ForEach(favorites) { ArtistTile(artist: $0) }
             }
             sectionLabel("EVERYONE ELSE", color: HushStyle.muted)

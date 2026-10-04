@@ -102,7 +102,7 @@ struct CollectionLayout<Side: View, List: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let sideWidth = min(300, max(220, geometry.size.width * 0.3))
+            let sideWidth = min(340, max(240, geometry.size.width * 0.3))
             HStack(alignment: .top, spacing: 40) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) { side }
@@ -333,7 +333,7 @@ struct ArtistPage: View {
         let isFavorite = library.isFavorite(artist.id)
         return HStack(spacing: 30) {
             ArtistPhoto(artistID: artist.id, name: artist.name)
-                .frame(width: 176, height: 176)
+                .frame(width: 210, height: 210)
                 .shadow(color: .black.opacity(0.6), radius: 25, y: 20)
             VStack(alignment: .leading, spacing: 10) {
                 Text(artist.name)
@@ -388,11 +388,11 @@ struct ArtistPage: View {
                             navigator.show(.album(album.id))
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
-                                CoverView(id: album.artworkTrackID, pixels: 400, cornerRadius: 9)
-                                    .frame(width: 220, height: 220)
+                                CoverView(id: album.artworkTrackID, pixels: 600, cornerRadius: 10)
+                                    .frame(width: 260, height: 260)
                                     .shadow(color: .black.opacity(0.42), radius: 12, y: 8)
                                 TileCaption(title: album.title, subtitle: [album.year.map(String.init), HushStyle.songCount(album.tracks.count)].compactMap { $0 }.joined(separator: " · "))
-                                    .frame(width: 220)
+                                    .frame(width: 260)
                             }
                         }
                         .buttonStyle(PressScaleButtonStyle())

@@ -31,6 +31,15 @@ struct SongsTable: View {
             }
         }
         .padding(.horizontal, 12)
+        .onAppear { applySort(navigator.sort(for: .songs)) }
+        .onChange(of: navigator.sort(for: .songs)) { _, sort in applySort(sort) }
+    }
+
+    /// The toolbar's sort menu: A to Z, or most played first (the column headers still sort too).
+    private func applySort(_ sort: LibrarySort) {
+        sortOrder = sort == .mostPlayed
+            ? [KeyPathComparator(\Track.playCount, order: .reverse)]
+            : [KeyPathComparator(\Track.title, comparator: .localizedStandard)]
     }
 
     private func table(_ rows: [Track]) -> some View {
@@ -50,47 +59,44 @@ struct SongsTable: View {
             }
             .width(28)
 
+            // The song and its cover lead; the artist sits quietly under the title.
             TableColumn("Title", value: \Track.title, comparator: .localizedStandard) { track in
-                HStack(spacing: 10) {
-                    CoverView(id: track.id, pixels: 80, cornerRadius: 4)
-                        .frame(width: 30, height: 30)
-                    Text(track.title)
-                        .font(.system(size: 13, weight: player.current?.id == track.id ? .semibold : .regular))
-                        .foregroundStyle(player.current?.id == track.id ? HushStyle.gold : HushStyle.ink)
-                        .lineLimit(1)
+                let isCurrent = player.current?.id == track.id
+                HStack(spacing: 14) {
+                    CoverView(id: track.id, pixels: 170, cornerRadius: 8)
+                        .frame(width: 56, height: 56)
+                        .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title)
+                            .font(.system(size: 15.5, weight: .semibold))
+                            .foregroundStyle(isCurrent ? HushStyle.gold : HushStyle.ink)
+                            .lineLimit(1)
+                        Text(track.artist)
+                            .font(.system(size: 12))
+                            .foregroundStyle(HushStyle.muted)
+                            .lineLimit(1)
+                    }
                 }
+                .frame(height: 68)
             }
-            .width(min: 180, ideal: 320)
-
-            TableColumn("Artist", value: \Track.artist, comparator: .localizedStandard) { track in
-                Text(track.artist)
-                    .foregroundStyle(HushStyle.ink.opacity(0.78))
-                    .lineLimit(1)
-            }
-            .width(min: 120, ideal: 220)
+            .width(min: 280, ideal: 620)
 
             TableColumn("Album", value: \Track.albumTitle, comparator: .localizedStandard) { track in
                 Text(track.albumTitle)
-                    .foregroundStyle(HushStyle.ink.opacity(0.78))
+                    .font(.system(size: 12))
+                    .foregroundStyle(HushStyle.muted.opacity(0.8))
                     .lineLimit(1)
             }
-            .width(min: 120, ideal: 220)
-
-            TableColumn("Plays", value: \Track.playCount) { track in
-                Text(track.playCount > 0 ? "\(track.playCount)" : "")
-                    .monospacedDigit()
-                    .foregroundStyle(HushStyle.muted)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(56)
+            .width(min: 90, ideal: 200, max: 260)
 
             TableColumn("Time", value: \Track.duration) { track in
                 Text(HushStyle.timestamp(track.duration))
+                    .font(.system(size: 11.5))
                     .monospacedDigit()
-                    .foregroundStyle(HushStyle.muted)
+                    .foregroundStyle(HushStyle.muted.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .width(56)
+            .width(52)
         }
         .font(.system(size: 13))
         .scrollContentBackground(.hidden)

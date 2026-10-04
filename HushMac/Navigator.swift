@@ -54,7 +54,6 @@ enum LibrarySection: String, CaseIterable, Identifiable, Hashable {
     var sortOptions: [LibrarySort] {
         switch self {
         case .artists: return [.alphabetical, .mostPlayed, .favorites]
-        case .songs: return []
         default: return [.alphabetical, .mostPlayed]
         }
     }
