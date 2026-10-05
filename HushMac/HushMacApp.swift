@@ -197,7 +197,8 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
-    /// Space plays and pauses anywhere (except while typing). In the video player: Esc closes it,
+    /// Space plays and pauses anywhere (except while typing). In the video player: Esc leaves full
+    /// screen (the video plays on in the window), or closes the player when it's already windowed,
     /// Z cycles Fit / Fill / Zoom, F toggles full screen, P starts Picture in Picture, ← and → skip
     /// 10 seconds. Esc also closes Now Playing. While a video floats in Picture in Picture, Space
     /// plays and pauses it.
@@ -210,7 +211,14 @@ final class HushAppDelegate: NSObject, NSApplicationDelegate {
         if video.isShowing, isMainWindow, modifiers.isEmpty, !isTyping {
             switch event.keyCode {
             case 49: video.togglePlayPause(); return true                  // Space
-            case 53: video.close(); return true                            // Esc
+            case 53:                                                        // Esc
+                if let window = NSApp.keyWindow, window.styleMask.contains(.fullScreen) {
+                    video.enteredFullScreen = false
+                    window.toggleFullScreen(nil)
+                } else {
+                    video.close()
+                }
+                return true
             case 6: video.cycleGravity(); return true                      // Z
             case 3:                                                         // F
                 if let window = NSApp.keyWindow {

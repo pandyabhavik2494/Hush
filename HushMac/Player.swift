@@ -236,9 +236,11 @@ final class Player {
         currentTime = 0
         source = nil
         lastStartedEntryID = nil
-        let center = MPNowPlayingInfoCenter.default()
-        center.nowPlayingInfo = nil
-        center.playbackState = .stopped
+        if !VideoPlayback.shared.handlesMediaKeys {
+            let center = MPNowPlayingInfoCenter.default()
+            center.nowPlayingInfo = nil
+            center.playbackState = .stopped
+        }
         UserDefaults.standard.removeObject(forKey: Keys.session)
     }
 
@@ -492,12 +494,18 @@ final class Player {
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let position = event.positionTime
-            Task { @MainActor in self?.seek(to: position) }
+            Task { @MainActor in
+                if VideoPlayback.shared.handlesMediaKeys { VideoPlayback.shared.seek(to: position); return }
+                self?.seek(to: position)
+            }
             return .success
         }
     }
 
-    private func updateNowPlayingInfo() {
+    /// While a video is open, the video player owns Now Playing (so AirPods and media keys reach it);
+    /// it hands back by calling this when it closes.
+    func updateNowPlayingInfo() {
+        guard !VideoPlayback.shared.handlesMediaKeys else { return }
         let center = MPNowPlayingInfoCenter.default()
         guard let track = current else {
             center.nowPlayingInfo = nil

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import AVKit
+import MediaPlayer
 import Observation
 import SwiftUI
 
@@ -89,6 +90,7 @@ final class VideoPlayback {
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var isSeeking = false
+    @ObservationIgnored private var nowPlayingArtwork: (id: UInt64, artwork: MPMediaItemArtwork)?
     /// Whether opening the video put the window in full screen (so closing it leaves full screen too).
     @ObservationIgnored var enteredFullScreen = false
 
@@ -135,6 +137,7 @@ final class VideoPlayback {
         player.play()
         isPlaying = true
         loadMediaOptions(for: item)
+        updateNowPlaying()
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
@@ -185,6 +188,8 @@ final class VideoPlayback {
             window.toggleFullScreen(nil)
         }
         enteredFullScreen = false
+        // Now Playing goes back to the music.
+        Player.shared.updateNowPlayingInfo()
     }
 
     static func openInTVApp() {
@@ -208,6 +213,7 @@ final class VideoPlayback {
             player.pause()
         }
         isPlaying = playing
+        updateNowPlaying()
     }
 
     /// Music started: a video that's showing pauses.
@@ -220,7 +226,46 @@ final class VideoPlayback {
         isSeeking = true
         currentTime = target
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            Task { @MainActor in self?.isSeeking = false }
+            Task { @MainActor in
+                self?.isSeeking = false
+                self?.updateNowPlaying()
+            }
+        }
+    }
+
+    // MARK: Now Playing
+
+    /// The video in Now Playing (Control Center, the menu bar widget, media keys, AirPods), so they
+    /// control Hush's player while a video is open, also in Picture in Picture.
+    private func updateNowPlaying() {
+        guard let video = current else { return }
+        let center = MPNowPlayingInfoCenter.default()
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: video.title,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+        ]
+        if let artist = video.artist { info[MPMediaItemPropertyArtist] = artist }
+        if let nowPlayingArtwork, nowPlayingArtwork.id == video.id {
+            info[MPMediaItemPropertyArtwork] = nowPlayingArtwork.artwork
+        } else {
+            loadNowPlayingArtwork(for: video)
+        }
+        center.nowPlayingInfo = info
+        center.playbackState = isPlaying ? .playing : .paused
+    }
+
+    private func loadNowPlayingArtwork(for video: Video) {
+        let id = video.id
+        let kind: ArtworkStore.Kind = video.isMovie ? .cover : .videoStill
+        Task {
+            guard let image = await ArtworkStore.shared.image(for: id, pixels: 600, kind: kind),
+                  current?.id == id else { return }
+            let size = image.size
+            nowPlayingArtwork = (id, MPMediaItemArtwork(boundsSize: size) { _ in image })
+            updateNowPlaying()
         }
     }
 
@@ -346,7 +391,10 @@ final class VideoPlayback {
             let playing = player.timeControlStatus != .paused
             Task { @MainActor in
                 guard let self, self.current != nil else { return }
+                let changed = self.isPlaying != playing
                 self.isPlaying = playing
+                // Paused or resumed from elsewhere (the Picture in Picture window, say).
+                if changed { self.updateNowPlaying() }
             }
         })
     }
