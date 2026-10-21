@@ -473,21 +473,17 @@ private extension View {
 private struct PlayerArtLayout: Equatable {
     /// Top bar height (48) plus its top padding (4).
     private static let topBarHeight: CGFloat = 52
-    /// The cover's margin at the sides, as on the album page.
-    private static let sideMargin: CGFloat = 28
     /// Space between the top bar and the cover, and between the cover and the title.
     private static let coverGap: CGFloat = 14
     /// Room the title, scrubber and buttons need below the cover (two-line title included).
     private static let controlsHeight: CGFloat = 290
-    /// The cover's corner radius (the album page's).
-    static let coverCornerRadius: CGFloat = 22
 
     let width: CGFloat
     let screenHeight: CGFloat
     let topInset: CGFloat
     /// From the very top of the screen to the cover's top edge.
     let drop: CGFloat
-    /// The cover's side: the width less the margins, smaller on short phones so the controls fit.
+    /// The cover's side: the full screen width, smaller on short phones so the controls fit.
     let coverSize: CGFloat
 
     init(width: CGFloat, height: CGFloat, topInset: CGFloat, bottomInset: CGFloat) {
@@ -498,7 +494,7 @@ private struct PlayerArtLayout: Equatable {
         screenHeight = height + topInset + bottomInset
         drop = topInset + Self.topBarHeight + Self.coverGap
         let room = screenHeight - bottomInset - Self.controlsHeight - Self.coverGap - drop
-        coverSize = max(min(width - Self.sideMargin * 2, room), 0)
+        coverSize = max(min(width, room), 0)
     }
 
     /// The cover's bottom edge, measured from the top of the screen.
@@ -510,39 +506,30 @@ private struct PlayerArtLayout: Equatable {
     }
 }
 
-/// Everything behind the player's controls: black, with the cover as a clean framed square, inset
-/// with rounded corners, a black edge and a soft shadow, like the album page.
+/// Everything behind the player's controls: black, with the cover as large as it fits, a crisp
+/// square the full width of the screen.
 private struct NowPlayingBackdrop: View {
     let item: MPMediaItem?
     let layout: PlayerArtLayout
 
     var body: some View {
-        let corners = RoundedRectangle(cornerRadius: PlayerArtLayout.coverCornerRadius, style: .continuous)
         ZStack(alignment: .top) {
             HushStyle.paper
             // Crossfades to the next song's cover instead of snapping.
             ZStack {
-                ArtworkView(item: item, cornerRadius: PlayerArtLayout.coverCornerRadius, size: CGSize(width: 1200, height: 1200))
+                ArtworkView(item: item, cornerRadius: 0, size: CGSize(width: 1200, height: 1200))
                     .id(item?.persistentID)
                     .transition(.opacity)
             }
             .animation(.easeInOut(duration: 0.35), value: item?.persistentID)
             .frame(width: layout.coverSize, height: layout.coverSize)
-            .clipShape(corners)
-            // A clean black edge around the art, inside its frame.
-            .overlay(corners.strokeBorder(.black, lineWidth: PlayerArtBorder.width))
-            .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 9)
+            .clipped()
             .offset(y: layout.drop)
         }
         .frame(width: layout.width, height: layout.screenHeight, alignment: .top)
         .clipped()
         .ignoresSafeArea()
     }
-}
-
-/// Every piece of art on the player page gets this black edge, drawn inside its frame.
-enum PlayerArtBorder {
-    static let width: CGFloat = 4
 }
 
 // MARK: - Apple Music–style play/pause pop
@@ -724,10 +711,6 @@ private struct QueueRow: View {
         HStack(spacing: 12) {
             ArtworkView(item: item, cornerRadius: 8, size: CGSize(width: 120, height: 120))
                 .frame(width: 46, height: 46)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(.black, lineWidth: PlayerArtBorder.width)
-                )
                 .overlay(alignment: .bottomTrailing) {
                     if isCurrent {
                         NowPlayingBadge(size: 17)
