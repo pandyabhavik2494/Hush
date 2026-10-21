@@ -53,7 +53,7 @@ struct AlbumDetailView: View {
                                 .foregroundStyle(HushStyle.paper)
                                 .padding(.horizontal, 18)
                                 .frame(height: 43)
-                                .background(HushStyle.gold, in: Capsule())
+                                .background(HushStyle.aurora, in: Capsule())
                             }
                             .buttonStyle(PopButtonStyle())
 
@@ -62,7 +62,7 @@ struct AlbumDetailView: View {
                                     Image(systemName: "shuffle").font(.system(size: 12, weight: .bold))
                                     Text("Shuffle").font(.system(size: 14, weight: .semibold, design: .rounded))
                                 }
-                                .foregroundStyle(HushStyle.gold)
+                                .foregroundStyle(HushStyle.aurora)
                                 .padding(.horizontal, 18)
                                 .frame(height: 43)
                                 .hushGlassBackground(Capsule())
@@ -87,7 +87,7 @@ struct AlbumDetailView: View {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(item.title ?? "Untitled")
                                                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(isCurrent ? HushStyle.gold : HushStyle.ink)
+                                                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
                                                     .lineLimit(1)
                                                 Text(item.artist ?? album.artist)
                                                     .font(.system(size: 12))
@@ -123,7 +123,7 @@ struct AlbumDetailView: View {
                 .onAppear { revealCurrentTrack(with: proxy) }
             }
         }
-        // System back button (gold chevron, no title) keeps the standard swipe-from-edge to go back.
+        // System back button (accent chevron, no title) keeps the standard swipe-from-edge to go back.
         // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
         // Glass over the page.
         .toolbarRole(.editor)
@@ -146,7 +146,7 @@ struct AlbumDetailView: View {
         }
     }
 
-    /// The album artist, in gold when it leads to their page; several artists → a short menu.
+    /// The album artist, in the accent when it leads to their page; several artists → a short menu.
     @ViewBuilder
     private var albumArtistLink: some View {
         let credited = onOpenArtist == nil ? [] : library.creditedArtists(in: album.artist)
@@ -156,7 +156,7 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.gold)
+                    .foregroundStyle(HushStyle.aurora)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the artist")
@@ -170,7 +170,7 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.gold)
+                    .foregroundStyle(HushStyle.aurora)
             }
             .accessibilityHint("Choose an artist to open")
         } else {
@@ -226,7 +226,7 @@ struct AlbumDetailView: View {
     }
 }
 
-/// Track number, or the gold now-playing bars when that song is the one playing.
+/// Track number, or the accent now-playing bars when that song is the one playing.
 struct TrackNumberLabel: View {
     let number: Int
     let isCurrent: Bool
@@ -248,7 +248,7 @@ struct TrackNumberLabel: View {
 struct NowPlayingBars: View {
     @EnvironmentObject private var playback: PlaybackStatus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var color: Color = HushStyle.gold
+    var color: Color = HushStyle.accent
     var height: CGFloat = 11
 
     /// Each bar's own tempo and phase (so they never move in lockstep) and its height at rest.
@@ -284,14 +284,14 @@ struct NowPlayingBars: View {
     }
 }
 
-/// The now-playing mark on a cover: the bars on a small gold disc.
+/// The now-playing mark on a cover: the bars on a small Aurora disc.
 struct NowPlayingBadge: View {
     var size: CGFloat = 20
 
     var body: some View {
         NowPlayingBars(color: HushStyle.paper, height: size * 0.46)
             .frame(width: size, height: size)
-            .background(HushStyle.gold, in: Circle())
+            .background(HushStyle.auroraDiagonal, in: Circle())
             .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 1)
     }
 }
@@ -345,14 +345,14 @@ struct ArtistDetailView: View {
                                 .foregroundStyle(HushStyle.paper)
                                 .padding(.horizontal, 20)
                                 .frame(height: 44)
-                                .background(HushStyle.gold, in: Capsule())
+                                .background(HushStyle.aurora, in: Capsule())
                         }
                         .buttonStyle(PopButtonStyle())
 
                         Button(action: onShuffle) {
                             Label("Shuffle", systemImage: "shuffle")
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(HushStyle.gold)
+                                .foregroundStyle(HushStyle.aurora)
                                 .padding(.horizontal, 20)
                                 .frame(height: 44)
                                 .hushGlassBackground(Capsule())
@@ -368,7 +368,7 @@ struct ArtistDetailView: View {
                         } label: {
                             Image(systemName: isFavorite ? "heart.fill" : "heart")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(HushStyle.gold)
+                                .foregroundStyle(HushStyle.aurora)
                                 .contentTransition(.symbolEffect(.replace))
                                 .frame(width: 44, height: 44)
                                 .hushGlassBackground(Circle())
@@ -400,7 +400,7 @@ struct ArtistDetailView: View {
             }
             .miniPlayerClearance()
         }
-        // System back button (gold chevron, no title); transparent bar so it floats as glass.
+        // System back button (accent chevron, no title); transparent bar so it floats as glass.
         .toolbarRole(.editor)
     }
 
@@ -473,7 +473,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title ?? "Untitled")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(isCurrent ? HushStyle.gold : HushStyle.ink)
+                        .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
                         .lineLimit(1)
                     if let credit {
                         Text(credit)

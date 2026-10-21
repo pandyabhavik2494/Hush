@@ -12,6 +12,16 @@ enum HushStyle {
     static let ink = Color(red: 0.945, green: 0.936, blue: 0.906)
     static let muted = Color(red: 0.610, green: 0.604, blue: 0.584)
     static let gold = Color(red: 0.790, green: 0.660, blue: 0.420)
+    #if os(iOS)
+    /// The iPhone's accent, Aurora: teal into violet. Filled accents and accent text use the
+    /// gradient; where one colour is needed (tints, system controls) it's `accent`, a soft violet.
+    static let auroraTeal = Color(red: 0.180, green: 0.902, blue: 0.773)
+    static let auroraViolet = Color(red: 0.545, green: 0.361, blue: 0.965)
+    static let accent = Color(red: 0.655, green: 0.545, blue: 0.980)
+    static let aurora = LinearGradient(colors: [auroraTeal, auroraViolet], startPoint: .leading, endPoint: .trailing)
+    /// The same gradient corner to corner, for circles.
+    static let auroraDiagonal = LinearGradient(colors: [auroraTeal, auroraViolet], startPoint: .topLeading, endPoint: .bottomTrailing)
+    #endif
     static let line = Color(red: 0.180, green: 0.173, blue: 0.155)
 
     static func brandFont(size: CGFloat) -> Font {

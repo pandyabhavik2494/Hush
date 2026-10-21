@@ -22,7 +22,7 @@ struct AboutView: View {
                     VStack(spacing: 6) {
                         Text("Hush")
                             .font(HushStyle.brandFont(size: 46))
-                            .foregroundStyle(HushStyle.gold)
+                            .foregroundStyle(HushStyle.aurora)
                         Text("A quiet player for the music you own.")
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .foregroundStyle(HushStyle.ink)
@@ -48,7 +48,7 @@ struct AboutView: View {
                             openURL(url)
                         }
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(HushStyle.gold)
+                        .foregroundStyle(HushStyle.aurora)
                         .buttonStyle(.plain)
                     }
 
@@ -82,7 +82,7 @@ struct AboutView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
-                        .tint(HushStyle.gold)
+                        .tint(HushStyle.accent)
                 }
             }
         }
@@ -106,7 +106,7 @@ private struct AboutSection<Content: View>: View {
             Text(title.uppercased())
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .tracking(1.2)
-                .foregroundStyle(HushStyle.gold)
+                .foregroundStyle(HushStyle.aurora)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 12) {
                 content
@@ -149,8 +149,8 @@ private struct CreditRow: View {
                 }
             }
             .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .foregroundStyle(HushStyle.gold)
-            .tint(HushStyle.gold)
+            .foregroundStyle(HushStyle.aurora)
+            .tint(HushStyle.accent)
             .padding(.top, 2)
         }
     }

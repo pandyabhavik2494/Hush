@@ -83,7 +83,7 @@ struct PlayerBar: View {
                     .foregroundStyle(HushStyle.paper)
                     .popSymbolSwap(isPlaying: playback.isPlaying)
                     .frame(width: 37, height: 37)
-                    .background(HushStyle.gold, in: Circle())
+                    .background(HushStyle.auroraDiagonal, in: Circle())
             }
             .buttonStyle(PopButtonStyle())
             .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
@@ -101,7 +101,7 @@ struct PlayerBar: View {
         .padding(.trailing, 6)
         .padding(.vertical, 7)
         .miniPlayerBackground()
-        // Thin gold progress line along the bottom edge — drawn over the glass, not part of it.
+        // Thin Aurora progress line along the bottom edge — drawn over the glass, not part of it.
         .overlay(alignment: .bottom) {
             MiniPlayerProgress()
                 .padding(.horizontal, 18)
@@ -216,9 +216,9 @@ private struct MiniPlayerProgress: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1, paused: !playback.isPlaying)) { _ in
             GeometryReader { geometry in
-                // Just the gold progress — no grey track line along the bottom of the bar.
+                // Just the Aurora progress — no grey track line along the bottom of the bar.
                 Capsule()
-                    .fill(HushStyle.gold)
+                    .fill(HushStyle.aurora)
                     .frame(width: geometry.size.width * progress)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

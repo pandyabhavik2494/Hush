@@ -54,7 +54,7 @@ struct QuietTextField: UIViewRepresentable {
             field.font = systemFont
         }
         field.textColor = UIColor(HushStyle.ink)
-        field.tintColor = UIColor(HushStyle.gold)
+        field.tintColor = UIColor(HushStyle.accent)
         field.attributedPlaceholder = NSAttributedString(
             string: placeholder,
             attributes: [.foregroundColor: placeholderColor]
@@ -102,7 +102,7 @@ struct PlaylistArtwork: View {
                         .fill(HushStyle.surface)
                     Image(systemName: "music.note.list")
                         .font(.system(size: safeSize * 0.28, weight: .light))
-                        .foregroundStyle(HushStyle.gold.opacity(0.8))
+                        .foregroundStyle(HushStyle.aurora.opacity(0.8))
                 }
             } else if shownItems.count == 1 {
                 ArtworkView(item: shownItems[0], cornerRadius: cornerRadius, size: CGSize(width: safeSize, height: safeSize))
@@ -193,14 +193,14 @@ struct PlaylistDetailView: View {
                                         .foregroundStyle(HushStyle.paper)
                                         .padding(.horizontal, 20)
                                         .frame(height: 44)
-                                        .background(HushStyle.gold, in: Capsule())
+                                        .background(HushStyle.aurora, in: Capsule())
                                 }
                                 .buttonStyle(PopButtonStyle())
 
                                 Button(action: onShuffle) {
                                     Label("Shuffle", systemImage: "shuffle")
                                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(HushStyle.gold)
+                                        .foregroundStyle(HushStyle.aurora)
                                         .padding(.horizontal, 20)
                                         .frame(height: 44)
                                         .hushGlassBackground(Capsule())
@@ -260,11 +260,11 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        // System back button (gold chevron, no title) keeps the standard swipe-from-edge to go back.
+        // System back button (accent chevron, no title) keeps the standard swipe-from-edge to go back.
         // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
         // Glass over the page.
         .toolbarRole(.editor)
-        .tint(HushStyle.gold)
+        .tint(HushStyle.accent)
     }
 
     /// Opening the playlist that's playing brings its current song into view — only when that song
@@ -305,7 +305,7 @@ struct PlaylistDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title ?? "Untitled")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(isCurrent ? HushStyle.gold : HushStyle.ink)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12))
