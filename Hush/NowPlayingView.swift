@@ -95,7 +95,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
                     .frame(width: 42, height: 42)
                     .playerGlass(in: Circle())
             }
@@ -113,7 +113,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
                     .frame(width: 42, height: 42)
                     .playerGlass(in: Circle())
             }
@@ -158,7 +158,7 @@ struct NowPlayingView: View {
         } else {
             Text("Hush")
                 .font(HushStyle.brandFont(size: 18))
-                .foregroundStyle(HushStyle.aurora)
+                .foregroundStyle(HushStyle.accent)
                 .shadow(color: .black.opacity(0.45), radius: 5, y: 1)
         }
     }
@@ -223,7 +223,7 @@ struct NowPlayingView: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(HushStyle.aurora.opacity(0.95))
+                    .foregroundStyle(HushStyle.accent.opacity(0.95))
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
                 }
@@ -249,7 +249,7 @@ struct NowPlayingView: View {
             Button { library.skipBack() } label: {
                 Image(systemName: "backward.end.fill")
                     .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
                     .frame(width: 58, height: 58)
                     .playerGlass(in: Circle())
                     .contentShape(Circle())
@@ -265,8 +265,7 @@ struct NowPlayingView: View {
                     .popSymbolSwap(isPlaying: playback.isPlaying)
                     .offset(x: playback.isPlaying ? 0 : 2)
                     .frame(width: 76, height: 76)
-                    .background(HushStyle.auroraDiagonal, in: Circle())
-                    .shadow(color: HushStyle.auroraViolet.opacity(0.45), radius: 22)
+                    .background(HushStyle.accent, in: Circle())
             }
             .buttonStyle(PopButtonStyle())
             .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
@@ -275,7 +274,7 @@ struct NowPlayingView: View {
             Button { library.skipForward() } label: {
                 Image(systemName: "forward.end.fill")
                     .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
                     .frame(width: 58, height: 58)
                     .playerGlass(in: Circle())
                     .contentShape(Circle())
@@ -299,13 +298,13 @@ struct NowPlayingView: View {
             VStack(spacing: 3) {
                 Image(systemName: "shuffle")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink.opacity(0.7)))
+                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
                     .frame(width: 36, height: 36)
                     .playerGlass(in: Circle())
                 Text(isEnabled ? "ON" : "OFF")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .tracking(0.7)
-                    .foregroundStyle(isEnabled ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink.opacity(0.7)))
+                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
             }
             .frame(width: 54, height: 64)
                 .contentShape(Rectangle())
@@ -327,13 +326,13 @@ struct NowPlayingView: View {
             VStack(spacing: 3) {
                 Image(systemName: symbol)
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink.opacity(0.7)))
+                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
                     .frame(width: 36, height: 36)
                     .playerGlass(in: Circle())
                 Text(stateLabel)
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .tracking(0.7)
-                    .foregroundStyle(isEnabled ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink.opacity(0.7)))
+                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
             }
             .frame(width: 54, height: 64)
                 .contentShape(Rectangle())
@@ -590,7 +589,7 @@ struct UpNextView: View {
                         VStack(spacing: 8) {
                             Image(systemName: "text.line.last.and.arrowtriangle.forward")
                                 .font(.system(size: 26, weight: .light))
-                                .foregroundStyle(HushStyle.aurora.opacity(0.85))
+                                .foregroundStyle(HushStyle.accent.opacity(0.85))
                             Text("Nothing up next")
                                 .font(.system(size: 17, weight: .regular, design: .serif))
                                 .foregroundStyle(HushStyle.ink)
@@ -654,7 +653,7 @@ struct UpNextView: View {
                                 withAnimation { library.clearUpNext() }
                             }
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(HushStyle.aurora)
+                            .foregroundStyle(HushStyle.accent)
                             .textCase(nil)
                         }
                     }
@@ -721,7 +720,7 @@ private struct QueueRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title ?? "Untitled")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
+                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12))
@@ -752,7 +751,7 @@ private struct AddToQueueView: View {
                     } label: {
                         Image(systemName: "text.line.first.and.arrowtriangle.forward")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(HushStyle.aurora)
+                            .foregroundStyle(HushStyle.accent)
                             .frame(width: 40, height: 40)
                             .contentShape(Rectangle())
                     }
@@ -763,7 +762,7 @@ private struct AddToQueueView: View {
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(HushStyle.aurora)
+                            .foregroundStyle(HushStyle.accent)
                             .frame(width: 40, height: 40)
                             .contentShape(Rectangle())
                     }

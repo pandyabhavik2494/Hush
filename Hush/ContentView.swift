@@ -693,7 +693,7 @@ struct ContentView: View {
                 // On glass like every other header control, so the wordmark reads over any cover.
                 Text("Hush")
                     .font(HushStyle.brandFont(size: 28))
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 3)
                     .frame(minHeight: 42)
@@ -722,7 +722,7 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "text.below.photo")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(gridTitles.wrappedValue ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink.opacity(0.9)))
+                        .foregroundStyle(gridTitles.wrappedValue ? HushStyle.accent : HushStyle.muted)
                         .frame(width: 38, height: 38)
                         .hushHeaderGlass(Circle())
                         .contentShape(Circle())
@@ -845,7 +845,7 @@ struct ContentView: View {
                             .background {
                                 if selectedTab == tab {
                                     Capsule()
-                                        .fill(HushStyle.aurora)
+                                        .fill(HushStyle.accent)
                                         .matchedGeometryEffect(id: "tab-selection", in: tabNamespace)
                                 }
                             }
@@ -856,7 +856,7 @@ struct ContentView: View {
                 }
             }
             .padding(3)
-            // Static glass track; only the Aurora pill on top of it moves.
+            // Static glass track; only the accent pill on top of it moves.
             .hushHeaderGlass(Capsule())
         }
         .padding(.horizontal, 18)
@@ -945,7 +945,7 @@ struct ContentView: View {
         VStack(spacing: 12) {
             Image(systemName: "heart")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(HushStyle.aurora.opacity(0.85))
+                .foregroundStyle(HushStyle.accent.opacity(0.85))
             Text("No favorite artists yet")
                 .font(.system(size: 21, weight: .regular, design: .serif))
                 .foregroundStyle(HushStyle.ink)
@@ -962,7 +962,7 @@ struct ContentView: View {
                     .foregroundStyle(HushStyle.paper)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 11)
-                    .background(HushStyle.aurora, in: Capsule())
+                    .background(HushStyle.accent, in: Capsule())
             }
             .buttonStyle(PopButtonStyle())
             .padding(.top, 4)
@@ -1046,7 +1046,7 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     Image(systemName: searchText.isEmpty ? "play.rectangle" : "magnifyingglass")
                         .font(.system(size: 31, weight: .light))
-                        .foregroundStyle(HushStyle.aurora.opacity(0.85))
+                        .foregroundStyle(HushStyle.accent.opacity(0.85))
                     Text(searchText.isEmpty ? "No videos yet" : "No videos found")
                         .font(.system(size: 21, weight: .regular, design: .serif))
                         .foregroundStyle(HushStyle.ink)
@@ -1117,7 +1117,7 @@ struct ContentView: View {
                         let filtered = !searchText.isEmpty || movieGenre != nil
                         Image(systemName: filtered ? "magnifyingglass" : "film")
                             .font(.system(size: 31, weight: .light))
-                            .foregroundStyle(HushStyle.aurora.opacity(0.85))
+                            .foregroundStyle(HushStyle.accent.opacity(0.85))
                         Text(filtered ? "No movies found" : "No movies yet")
                             .font(.system(size: 21, weight: .regular, design: .serif))
                             .foregroundStyle(HushStyle.ink)
@@ -1206,7 +1206,7 @@ struct ContentView: View {
                 .foregroundStyle(isSelected ? HushStyle.paper : HushStyle.ink.opacity(0.9))
                 .padding(.horizontal, 14)
                 .frame(height: 32)
-                .background(isSelected ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.surface), in: Capsule())
+                .background(isSelected ? HushStyle.accent : HushStyle.surface, in: Capsule())
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -1327,7 +1327,7 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     Image(systemName: searchText.isEmpty ? "music.note.list" : "magnifyingglass")
                         .font(.system(size: 31, weight: .light))
-                        .foregroundStyle(HushStyle.aurora.opacity(0.85))
+                        .foregroundStyle(HushStyle.accent.opacity(0.85))
                     Text(searchText.isEmpty ? "No playlists yet" : "No playlists found")
                         .font(.system(size: 21, weight: .regular, design: .serif))
                         .foregroundStyle(HushStyle.ink)
@@ -1412,7 +1412,7 @@ struct ContentView: View {
             .foregroundStyle(HushStyle.paper)
             .padding(.horizontal, 18)
             .padding(.vertical, 11)
-            .background(HushStyle.aurora, in: Capsule())
+            .background(HushStyle.accent, in: Capsule())
             .padding(.top, 4)
         }
         .padding(30)
@@ -1424,7 +1424,7 @@ struct ContentView: View {
         return VStack(spacing: 12) {
             Image(systemName: searchText.isEmpty ? "waveform" : "magnifyingglass")
                 .font(.system(size: 32, weight: .light))
-                .foregroundStyle(HushStyle.aurora.opacity(0.8))
+                .foregroundStyle(HushStyle.accent.opacity(0.8))
             Text(searchText.isEmpty ? "A quiet start" : "Nothing found")
                 .font(.system(size: 21, weight: .regular, design: .serif))
                 .foregroundStyle(HushStyle.ink)
@@ -1444,7 +1444,7 @@ struct ContentView: View {
                 .foregroundStyle(HushStyle.paper)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 11)
-                .background(HushStyle.aurora, in: Capsule())
+                .background(HushStyle.accent, in: Capsule())
                 .padding(.top, 4)
             }
         }
@@ -1537,7 +1537,7 @@ private struct ArtistTile: View {
                     if isFavorite {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(HushStyle.aurora)
+                            .foregroundStyle(HushStyle.accent)
                             .frame(width: 24, height: 24)
                             .background(HushStyle.paper, in: Circle())
                             .overlay(Circle().stroke(HushStyle.accent.opacity(0.35), lineWidth: 0.6))
@@ -1612,7 +1612,7 @@ private struct SongRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title ?? "Untitled")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
+                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12))
@@ -2049,7 +2049,7 @@ private struct AlphabeticalLetterIndex<ItemID: Hashable>: View {
                     } label: {
                         Text(target.letter)
                             .font(.system(size: isActive ? activeSize : regularSize, weight: .semibold, design: .rounded))
-                            .foregroundStyle(isActive ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.muted))
+                            .foregroundStyle(isActive ? HushStyle.accent : HushStyle.muted)
                             .frame(maxWidth: .infinity)
                             .frame(height: cellHeight)
                             .background {
@@ -2143,7 +2143,7 @@ private struct FastScrollRail: View {
                     .frame(width: 2, height: trackHeight)
 
                 Capsule()
-                    .fill(HushStyle.aurora.opacity(0.9))
+                    .fill(HushStyle.accent.opacity(0.9))
                     .frame(width: 5, height: thumbHeight)
                     .offset(y: safeProgress * travel)
             }

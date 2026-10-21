@@ -102,7 +102,7 @@ struct PlaylistArtwork: View {
                         .fill(HushStyle.surface)
                     Image(systemName: "music.note.list")
                         .font(.system(size: safeSize * 0.28, weight: .light))
-                        .foregroundStyle(HushStyle.aurora.opacity(0.8))
+                        .foregroundStyle(HushStyle.accent.opacity(0.8))
                 }
             } else if shownItems.count == 1 {
                 ArtworkView(item: shownItems[0], cornerRadius: cornerRadius, size: CGSize(width: safeSize, height: safeSize))
@@ -193,14 +193,14 @@ struct PlaylistDetailView: View {
                                         .foregroundStyle(HushStyle.paper)
                                         .padding(.horizontal, 20)
                                         .frame(height: 44)
-                                        .background(HushStyle.aurora, in: Capsule())
+                                        .background(HushStyle.accent, in: Capsule())
                                 }
                                 .buttonStyle(PopButtonStyle())
 
                                 Button(action: onShuffle) {
                                     Label("Shuffle", systemImage: "shuffle")
                                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(HushStyle.aurora)
+                                        .foregroundStyle(HushStyle.accent)
                                         .padding(.horizontal, 20)
                                         .frame(height: 44)
                                         .hushGlassBackground(Capsule())
@@ -305,7 +305,7 @@ struct PlaylistDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title ?? "Untitled")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
+                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12))

@@ -53,7 +53,7 @@ struct AlbumDetailView: View {
                                 .foregroundStyle(HushStyle.paper)
                                 .padding(.horizontal, 18)
                                 .frame(height: 43)
-                                .background(HushStyle.aurora, in: Capsule())
+                                .background(HushStyle.accent, in: Capsule())
                             }
                             .buttonStyle(PopButtonStyle())
 
@@ -62,7 +62,7 @@ struct AlbumDetailView: View {
                                     Image(systemName: "shuffle").font(.system(size: 12, weight: .bold))
                                     Text("Shuffle").font(.system(size: 14, weight: .semibold, design: .rounded))
                                 }
-                                .foregroundStyle(HushStyle.aurora)
+                                .foregroundStyle(HushStyle.accent)
                                 .padding(.horizontal, 18)
                                 .frame(height: 43)
                                 .hushGlassBackground(Capsule())
@@ -87,7 +87,7 @@ struct AlbumDetailView: View {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(item.title ?? "Untitled")
                                                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
+                                                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                                                     .lineLimit(1)
                                                 Text(item.artist ?? album.artist)
                                                     .font(.system(size: 12))
@@ -156,7 +156,7 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the artist")
@@ -170,7 +170,7 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.aurora)
+                    .foregroundStyle(HushStyle.accent)
             }
             .accessibilityHint("Choose an artist to open")
         } else {
@@ -284,14 +284,14 @@ struct NowPlayingBars: View {
     }
 }
 
-/// The now-playing mark on a cover: the bars on a small Aurora disc.
+/// The now-playing mark on a cover: the bars on a small accent disc.
 struct NowPlayingBadge: View {
     var size: CGFloat = 20
 
     var body: some View {
         NowPlayingBars(color: HushStyle.paper, height: size * 0.46)
             .frame(width: size, height: size)
-            .background(HushStyle.auroraDiagonal, in: Circle())
+            .background(HushStyle.accent, in: Circle())
             .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 1)
     }
 }
@@ -345,14 +345,14 @@ struct ArtistDetailView: View {
                                 .foregroundStyle(HushStyle.paper)
                                 .padding(.horizontal, 20)
                                 .frame(height: 44)
-                                .background(HushStyle.aurora, in: Capsule())
+                                .background(HushStyle.accent, in: Capsule())
                         }
                         .buttonStyle(PopButtonStyle())
 
                         Button(action: onShuffle) {
                             Label("Shuffle", systemImage: "shuffle")
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(HushStyle.aurora)
+                                .foregroundStyle(HushStyle.accent)
                                 .padding(.horizontal, 20)
                                 .frame(height: 44)
                                 .hushGlassBackground(Capsule())
@@ -368,7 +368,7 @@ struct ArtistDetailView: View {
                         } label: {
                             Image(systemName: isFavorite ? "heart.fill" : "heart")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(HushStyle.aurora)
+                                .foregroundStyle(HushStyle.accent)
                                 .contentTransition(.symbolEffect(.replace))
                                 .frame(width: 44, height: 44)
                                 .hushGlassBackground(Circle())
@@ -473,7 +473,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title ?? "Untitled")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(isCurrent ? AnyShapeStyle(HushStyle.aurora) : AnyShapeStyle(HushStyle.ink))
+                        .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                         .lineLimit(1)
                     if let credit {
                         Text(credit)
