@@ -183,7 +183,7 @@ extension EnvironmentValues {
 /// The swipeable tabs (a paging TabView) clip their pages to their own frame, so the pages are
 /// stretched up to the top of the screen and each one gets an invisible bar exactly as tall as the
 /// header. To the system that is an ordinary top bar: lists rest below it, slide underneath it,
-/// pull-to-refresh appears below it, and iOS 26 adds its soft edge effect at the very top.
+/// pull-to-refresh appears below it.
 /// The height is measured, never guessed: (header's bottom) − (where this bar starts).
 private struct UnderLibraryHeader: ViewModifier {
     @Environment(\.libraryHeaderBottom) private var headerBottom
@@ -197,75 +197,15 @@ private struct UnderLibraryHeader: ViewModifier {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-        if #available(iOS 26.0, *) {
-            content.safeAreaBar(edge: .top, spacing: 0) { spacer }
-        } else {
-            content.safeAreaInset(edge: .top, spacing: 0) { spacer }
-        }
-    }
-}
-
-/// A light, real blur for whatever slides under the floating header, so the title, search and
-/// tabs on top stay easy to read while every cover stays recognisable.
-///
-/// Each cover or row blurs *itself* by how much of it is hidden under the header: untouched while
-/// it is below the tab pills, softening as it slides under them, and at full (still light)
-/// strength once it is completely underneath. A system material can't do this — even the thinnest
-/// one is a heavy frosted blur with no adjustable strength — and nothing is drawn over the list,
-/// so there is no edge or line anywhere. Runs on the render thread from the item's position;
-/// the list never redraws for it.
-private struct UnderHeaderBlur: ViewModifier {
-    @Environment(\.libraryHeaderBottom) private var headerBottom
-
-    /// Blur radius (points) of an item that is fully under the header. System materials are ~30.
-    static let maxRadius: CGFloat = 4
-    /// How much a fully hidden item is dimmed (0 = not at all).
-    static let maxDim: Double = 0.12
-
-    func body(content: Content) -> some View {
-        // Plain copies for the effect closure: it runs on the render thread, so it may only use
-        // values captured here, not properties of this (main-thread) view.
-        let bottom = headerBottom
-        let maxRadius = Self.maxRadius
-        let maxDim = Self.maxDim
-        content.visualEffect { effect, proxy in
-            let frame = proxy.frame(in: .global)
-            // Share of the item that has passed above the header's bottom edge (0…1).
-            let hidden = bottom > 0 && frame.height > 0 ? (bottom - frame.minY) / frame.height : 0
-            let depth = min(max(hidden, 0), 1)
-            // Squared: it starts as soon as the item goes under the tab pills, but stays faint
-            // while part of the item still shows below them.
-            let strength = depth * depth
-            return effect
-                .blur(radius: strength * maxRadius)
-                .opacity(1 - Double(strength) * maxDim)
-        }
+        // A plain inset, not a bar: the header is opaque, so no scroll-edge effect is wanted.
+        content.safeAreaInset(edge: .top, spacing: 0) { spacer }
     }
 }
 
 private extension View {
-    /// See `UnderHeaderBlur`.
-    func underHeaderBlur() -> some View {
-        modifier(UnderHeaderBlur())
-    }
-
     /// See `UnderLibraryHeader`.
     func underLibraryHeader() -> some View {
         modifier(UnderLibraryHeader())
-    }
-
-    /// The glass behind each control of the library header. The header has no panel of its own:
-    /// like the App Store's search bar, each control floats on its own Liquid Glass and the library
-    /// stays visible through and around it. A light smoke tint keeps the accent and white readable over
-    /// bright covers. Static background layer (glass never animates); frosted material before iOS 26.
-    func hushHeaderGlass<S: Shape>(_ shape: S) -> some View {
-        background {
-            if #available(iOS 26.0, *) {
-                Color.clear.glassEffect(Glass.regular.tint(HushStyle.paper.opacity(0.3)), in: shape)
-            } else {
-                shape.fill(.ultraThinMaterial)
-            }
-        }
     }
 }
 
@@ -330,8 +270,11 @@ struct ContentView: View {
     /// Top edge of the mini player on screen (infinity when it's hidden); lists use it to keep their
     /// last rows reachable above it.
     @State private var miniPlayerTop: CGFloat = .infinity
-    @Namespace private var tabNamespace
     @State private var selectedTab: LibraryTab = .albums
+    /// The search field shows under the title row while this is on.
+    @State private var isSearching = false
+    /// Tabs whose list is scrolled away from the top (the header shows its hairline).
+    @State private var scrolledTabs: Set<LibraryTab> = []
     @State private var scrollToTop = ScrollToTopRequest()
     @State private var sort: LibrarySort = .alphabetical
     /// The Artists tab has its own sort: artists with the most songs first by default (remembered).
@@ -363,6 +306,8 @@ struct ContentView: View {
     @State private var visibleSongs: [MPMediaItem] = []
     @State private var visibleSongIDs: [UInt64] = []
     @State private var visibleSongLetters: [String] = []
+    /// In A–Z order: the first song of each letter, and its letter (for the section letters).
+    @State private var songSectionStarts: [UInt64: String] = [:]
     @State private var visiblePlaylists: [MusicPlaylist] = []
     @State private var visibleArtists: [MusicArtist] = []
     @State private var visibleArtistIDs: [String] = []
@@ -402,6 +347,13 @@ struct ContentView: View {
         visibleSongs = songs
         visibleSongIDs = songIDs
         visibleSongLetters = sort == .alphabetical ? songIDs.map { songInfo[$0]?.sectionLetter ?? "#" } : []
+        var starts: [UInt64: String] = [:]
+        var lastLetter: String?
+        for (id, letter) in zip(songIDs, visibleSongLetters) where letter != lastLetter {
+            starts[id] = letter
+            lastLetter = letter
+        }
+        songSectionStarts = starts
         var videos = library.videos.filter { LibrarySearch.matches($0.searchKey, query: query) }
         if sort == .mostPlayed {
             videos = Self.sortedByPlayCount(videos) { $0.item?.playCount ?? 0 }
@@ -472,28 +424,24 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             ZStack {
                 HushStyle.paper.ignoresSafeArea()
-                // The header floats over the library with no panel behind it (App Store style):
-                // each control sits on its own Liquid Glass, and the lists scroll underneath and
-                // stay visible. The pages get the header's measured height as their top inset.
+                // An opaque black header over the library: the lists scroll under it and nothing
+                // shows through. The pages get the header's measured height as their top inset.
                 libraryContent
                     .environment(\.libraryHeaderBottom, libraryHeaderBottom)
                     .overlay(alignment: .top) {
                         VStack(spacing: 0) {
-                            // The whole header — title, search and tabs — stays put while you scroll.
                             header
-                            searchField
+                            if isSearching { searchField }
                             tabPicker
                         }
-                        .background {
-                            // What shows through the header is behind glass, not a button: a tap that
-                            // just misses a control must not open the album underneath it.
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .onTapGesture {}
-                                .ignoresSafeArea(edges: .top)
-                                .accessibilityHidden(true)
+                        .background(HushStyle.paper.ignoresSafeArea(edges: .top))
+                        .contentShape(Rectangle())
+                        // A hairline under the header only once the list has scrolled beneath it.
+                        .overlay(alignment: .bottom) {
+                            if scrolledTabs.contains(selectedTab) {
+                                Rectangle().fill(HushStyle.line).frame(height: 1)
+                            }
                         }
-                        .background { LegacyHeaderShade() }
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { bottom in
                             if abs(bottom - libraryHeaderBottom) > 0.5 { libraryHeaderBottom = bottom }
                         }
@@ -686,128 +634,123 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(spacing: 0) {
             Button {
                 isAboutPresented = true
             } label: {
-                // On glass like every other header control, so the wordmark reads over any cover.
                 Text("Hush")
-                    .font(HushStyle.brandFont(size: 28))
-                    .foregroundStyle(HushStyle.accent)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 3)
-                    .frame(minHeight: 42)
-                    .hushHeaderGlass(Capsule())
-                    .contentShape(Capsule())
+                    .font(HushStyle.brandFont(size: 22))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("About Hush")
             Spacer()
-            // How many are showing, on its own small glass so it reads over artwork too.
-            Text(tabCount)
-                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(HushStyle.ink.opacity(0.92))
-                .padding(.horizontal, 12)
-                .frame(minWidth: 44)
-                .frame(height: 38)
-                .hushHeaderGlass(Capsule())
-                // The glass itself never animates.
-                .animation(nil, value: selectedTab)
-                .accessibilityLabel("\(tabCount) \(selectedTab.rawValue.lowercased())")
-            if selectedTab == .playlists || selectedTab == .albums || selectedTab == .movies {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        gridTitles.wrappedValue.toggle()
-                    }
-                } label: {
-                    Image(systemName: "text.below.photo")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(gridTitles.wrappedValue ? HushStyle.accent : HushStyle.muted)
-                        .frame(width: 38, height: 38)
-                        .hushHeaderGlass(Circle())
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Show titles")
-                .accessibilityValue(gridTitles.wrappedValue ? "On" : "Off")
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { isSearching = true }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .regular))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            // Playlists are listed A–Z like the Music app; sorting only applies to Albums and Songs.
-            if selectedTab != .playlists {
-                Menu {
-                    Picker("Sort", selection: currentSort) {
-                        ForEach(LibrarySort.options(for: selectedTab), id: \.self) { option in
-                            Label(option.rawValue, systemImage: option.symbol).tag(option)
-                        }
-                    }
-                    // Same as pulling down on the Artists tab, where few would think to look: asks the
-                    // catalogs again for artists still showing initials. New photos fade in as they arrive.
-                    if selectedTab == .artists {
-                        Section {
-                            Button {
-                                Task { await library.refreshLibrary() }
-                            } label: {
-                                Label("Look for Missing Photos", systemImage: "arrow.clockwise")
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: currentSort.wrappedValue.symbol)
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(currentSort.wrappedValue.shortLabel)
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .tracking(0.7)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .foregroundStyle(HushStyle.ink.opacity(0.92))
-                    .padding(.horizontal, 13)
-                    .frame(height: 38)
-                    .hushHeaderGlass(Capsule())
-                    .contentShape(Capsule())
-                }
-                .accessibilityLabel("Sort by \(currentSort.wrappedValue.rawValue)")
-            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Search")
+            optionsMenu
         }
-        .frame(minHeight: 36)
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .frame(height: 44)
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
+    }
+
+    /// Sort, titles and (on Artists) a fresh look for photos, in one menu.
+    private var optionsMenu: some View {
+        Menu {
+            // Playlists are listed A–Z like the Music app, so they have no sort.
+            if selectedTab != .playlists {
+                Picker("Sort", selection: currentSort) {
+                    ForEach(LibrarySort.options(for: selectedTab), id: \.self) { option in
+                        Label(option.rawValue, systemImage: option.symbol).tag(option)
+                    }
+                }
+            }
+            if selectedTab == .playlists || selectedTab == .albums || selectedTab == .movies {
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { gridTitles.wrappedValue },
+                        set: { value in withAnimation(.easeInOut(duration: 0.2)) { gridTitles.wrappedValue = value } }
+                    )) {
+                        Label("Show Titles", systemImage: "text.below.photo")
+                    }
+                }
+            }
+            // Same as pulling down on the Artists tab, where few would think to look: asks the
+            // catalogs again for artists still showing initials. New photos fade in as they arrive.
+            if selectedTab == .artists {
+                Section {
+                    Button {
+                        Task { await library.refreshLibrary() }
+                    } label: {
+                        Label("Look for Missing Photos", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(HushStyle.ink)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Sort and view options")
     }
 
     private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(HushStyle.ink.opacity(0.75))
-            QuietTextField(
-                text: $searchText,
-                placeholder: searchPlaceholder,
-                capitalization: .none,
-                returnKeyType: .search,
-                fontSize: 15,
-                // Brighter than the usual muted grey: it now sits on glass over artwork.
-                placeholderColor: UIColor(HushStyle.ink.opacity(0.72))
-            )
-            .accessibilityLabel("Search music library")
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(HushStyle.ink.opacity(0.7))
-                        .frame(width: 32, height: 40)
-                        .contentShape(Rectangle())
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(HushStyle.muted)
+                QuietTextField(
+                    text: $searchText,
+                    placeholder: searchPlaceholder,
+                    capitalization: .none,
+                    returnKeyType: .search,
+                    fontSize: 16,
+                    placeholderColor: UIColor(HushStyle.muted),
+                    focusOnAppear: true
+                )
+                .accessibilityLabel("Search music library")
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(HushStyle.muted)
+                            .frame(width: 28, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
             }
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(HushStyle.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Button("Cancel") {
+                searchText = ""
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                withAnimation(.easeOut(duration: 0.2)) { isSearching = false }
+            }
+            .font(.system(size: 16))
+            .foregroundStyle(HushStyle.ink)
         }
-        .padding(.horizontal, 15)
-        .frame(height: 46)
-        .hushHeaderGlass(Capsule())
-        .padding(.horizontal, 18)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 20)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
+        .transition(.opacity)
     }
 
     private var searchPlaceholder: String {
@@ -821,58 +764,52 @@ struct ContentView: View {
         }
     }
 
+    /// The six tabs as words in the serif, the one you're on bright. Scrolls sideways; the
+    /// current one is kept in view.
     private var tabPicker: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 2) {
-                ForEach(LibraryTab.allCases, id: \.self) { tab in
-                    Button {
-                        if selectedTab == tab {
-                            // Already here: back to the top, like tapping a tab in Apple's apps.
-                            scrollToTop = ScrollToTopRequest(tab: tab, count: scrollToTop.count + 1)
-                        } else {
-                            withAnimation(.snappy(duration: 0.3)) { selectedTab = tab }
-                        }
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
-                            .foregroundStyle(selectedTab == tab ? HushStyle.paper : HushStyle.ink.opacity(0.92))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .padding(.horizontal, 3)
-                            // Six tabs share the full width equally (the count sits in the title row).
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 32)
-                            .background {
-                                if selectedTab == tab {
-                                    Capsule()
-                                        .fill(HushStyle.accent)
-                                        .matchedGeometryEffect(id: "tab-selection", in: tabNamespace)
-                                }
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 24) {
+                    ForEach(LibraryTab.allCases, id: \.self) { tab in
+                        Button {
+                            if selectedTab == tab {
+                                // Already here: back to the top, like tapping a tab in Apple's apps.
+                                scrollToTop = ScrollToTopRequest(tab: tab, count: scrollToTop.count + 1)
+                            } else {
+                                withAnimation(.snappy(duration: 0.3)) { selectedTab = tab }
                             }
-                            .contentShape(Capsule())
+                        } label: {
+                            Text(tab.rawValue)
+                                .font(.system(size: 31, weight: .regular, design: .serif))
+                                .tracking(-0.3)
+                                .foregroundStyle(selectedTab == tab ? HushStyle.ink : HushStyle.tabIdle)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .frame(height: 58)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .id(tab)
+                        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
                 }
+                .padding(.horizontal, 20)
             }
-            .padding(3)
-            // Static glass track; only the accent pill on top of it moves.
-            .hushHeaderGlass(Capsule())
+            .frame(height: 58)
+            .onChange(of: selectedTab) { _, tab in
+                withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(tab, anchor: .center) }
+            }
+            .onAppear { proxy.scrollTo(selectedTab, anchor: .center) }
         }
-        .padding(.horizontal, 18)
-        .padding(.bottom, 10)
-        // Scoped to the tab bar only, so the library content itself switches instantly.
-        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: selectedTab)
+        .animation(.easeInOut(duration: 0.2), value: selectedTab)
     }
 
-    private var tabCount: String {
-        switch selectedTab {
-        case .albums: return "\(visibleAlbums.count)"
-        case .artists: return "\(visibleArtists.count)"
-        case .songs: return "\(visibleSongs.count)"
-        case .playlists: return "\(visiblePlaylists.count)"
-        case .videos: return "\(visibleVideos.count)"
-        case .movies: return "\(visibleMovies.count)"
+    /// Reports whether a tab's list has scrolled away from the top (for the header's hairline).
+    private func scrollTracker(_ tab: LibraryTab) -> (CGFloat, CGFloat) -> Void {
+        { _, offset in
+            let scrolled = offset > 1
+            guard scrolledTabs.contains(tab) != scrolled else { return }
+            if scrolled { scrolledTabs.insert(tab) } else { scrolledTabs.remove(tab) }
         }
     }
 
@@ -885,7 +822,7 @@ struct ContentView: View {
             VStack(spacing: 12) {
                 ProgressView().tint(HushStyle.accent)
                 Text("Gathering your music")
-                    .font(.system(size: 13, design: .rounded))
+                    .font(.system(size: 13))
                     .foregroundStyle(HushStyle.muted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -958,7 +895,7 @@ struct ContentView: View {
                 artistSort = .mostSongs
             } label: {
                 Text("Show All Artists")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(HushStyle.paper)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 11)
@@ -981,12 +918,13 @@ struct ContentView: View {
             estimatedRowHeight: 168,
             estimatedPadding: 36,
             onRefresh: { await library.refreshLibrary() },
+            onScrollOffsetChange: scrollTracker(.artists),
             scrollToTopSignal: scrollToTop.signal(for: .artists)
         ) {
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3),
+                columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3),
                 alignment: .center,
-                spacing: 20
+                spacing: 24
             ) {
                 // The artist the music was started from gets the now-playing mark.
                 let startedFromArtistID = playingArtistID
@@ -1004,12 +942,11 @@ struct ContentView: View {
                     }
                     .buttonStyle(TilePressStyle())
                     .contextMenu { artistMenu(artist, isFavorite: isFavorite) }
-                    .underHeaderBlur()
                     .id(artist.id)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 20)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
             .padding(.bottom, 16)
         }
     }
@@ -1077,13 +1014,13 @@ struct ContentView: View {
             estimatedRowHeight: 106,
             estimatedPadding: 36,
             onRefresh: { await library.refreshLibrary() },
+            onScrollOffsetChange: scrollTracker(.videos),
             scrollToTopSignal: scrollToTop.signal(for: .videos)
         ) {
-            // Titles sit on the stills, so the tiles pack close together like the Albums grid.
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 2),
+                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
                 alignment: .leading,
-                spacing: 5
+                spacing: 12
             ) {
                 ForEach(visibleVideos) { video in
                     Button {
@@ -1092,12 +1029,11 @@ struct ContentView: View {
                         VideoTile(video: video)
                     }
                     .buttonStyle(TilePressStyle())
-                    .underHeaderBlur()
                     .id(video.id)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 20)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
             .padding(.bottom, 16)
         }
     }
@@ -1149,18 +1085,18 @@ struct ContentView: View {
             estimatedRowHeight: showMovieTitles ? 236 : 186,
             estimatedPadding: movieGenres.isEmpty ? 36 : 82,
             onRefresh: { await library.refreshLibrary() },
+            onScrollOffsetChange: scrollTracker(.movies),
             scrollToTopSignal: scrollToTop.signal(for: .movies)
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 if !movieGenres.isEmpty {
                     genreFilter
-                        .underHeaderBlur()
                 }
                 // Like the Albums grid: posters close together, names only when the titles toggle is on.
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: showMovieTitles ? 10 : 6), count: 3),
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                     alignment: .leading,
-                    spacing: showMovieTitles ? 18 : 6
+                    spacing: showMovieTitles ? 22 : 12
                 ) {
                     ForEach(visibleMovies) { movie in
                         Button {
@@ -1169,13 +1105,12 @@ struct ContentView: View {
                             MovieTile(movie: movie, showsTitle: showMovieTitles)
                         }
                         .buttonStyle(TilePressStyle())
-                        .underHeaderBlur()
                         .id(movie.id)
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 20)
             }
-            .padding(.top, 20)
+            .padding(.top, 12)
             .padding(.bottom, 16)
         }
     }
@@ -1191,7 +1126,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 20)
         }
         .scrollClipDisabled()
     }
@@ -1202,7 +1137,7 @@ struct ContentView: View {
             withAnimation(.snappy(duration: 0.25)) { action() }
         } label: {
             Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? HushStyle.paper : HushStyle.ink.opacity(0.9))
                 .padding(.horizontal, 14)
                 .frame(height: 32)
@@ -1238,16 +1173,17 @@ struct ContentView: View {
             itemIDs: visibleAlbumIDs,
             itemLetters: visibleAlbumLetters,
             isAlphabetical: sort == .alphabetical,
-            itemsPerRow: 3,
-            estimatedRowHeight: showGridTitles ? 177 : 131,
+            itemsPerRow: 2,
+            estimatedRowHeight: showGridTitles ? 236 : 188,
             estimatedPadding: 36,
             onRefresh: { await library.refreshLibrary() },
+            onScrollOffsetChange: scrollTracker(.albums),
             scrollToTopSignal: scrollToTop.signal(for: .albums)
         ) {
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: showGridTitles ? 10 : 6), count: 3),
+                columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2),
                 alignment: .leading,
-                spacing: showGridTitles ? 18 : 6
+                spacing: showGridTitles ? 22 : 14
             ) {
                 // The album of the song that's playing gets the now-playing mark.
                 let playingAlbumID = library.currentItem?.albumPersistentID
@@ -1264,12 +1200,11 @@ struct ContentView: View {
                     }
                     .buttonStyle(TilePressStyle())
                     .queueMenu(album.items)
-                    .underHeaderBlur()
                     .id(album.id)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 20)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
             .padding(.bottom, 16)
         }
     }
@@ -1280,23 +1215,32 @@ struct ContentView: View {
             itemLetters: visibleSongLetters,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 1,
-            estimatedRowHeight: 72,
+            estimatedRowHeight: 66,
             estimatedPadding: 25,
             onRefresh: { await library.refreshLibrary() },
+            onScrollOffsetChange: scrollTracker(.songs),
             scrollToTopSignal: scrollToTop.signal(for: .songs)
         ) {
-            LazyVStack(spacing: 0) {
-                // No enumerated() copy of the whole list: this body re-runs on every navigation.
-                let lastSongID = visibleSongIDs.last
+            LazyVStack(alignment: .leading, spacing: 0) {
+                let currentID = library.currentItem?.persistentID
                 ForEach(visibleSongs, id: \.persistentID) { song in
-                    HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // In A–Z order, a quiet letter where each new letter starts.
+                        if let letter = songSectionStarts[song.persistentID] {
+                            Text(letter)
+                                .font(.system(size: 15, weight: .regular, design: .serif))
+                                .foregroundStyle(HushStyle.muted)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                         Button {
                             library.play(song, from: visibleSongs)
                             openPlayer(from: PlayerArtworkTransitionID.librarySong(song.persistentID))
                         } label: {
                             SongRow(
                                 item: song,
-                                isCurrent: library.currentItem?.persistentID == song.persistentID,
+                                isCurrent: currentID == song.persistentID,
                                 artworkNamespace: artworkNamespace
                             )
                         }
@@ -1304,16 +1248,11 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .queueMenu([song])
                     }
-                    .underHeaderBlur()
                     .id(song.persistentID)
-                    if song.persistentID != lastSongID {
-                        Rectangle().fill(HushStyle.line.opacity(0.34)).frame(height: 0.5).padding(.leading, 76)
-                            .underHeaderBlur()
-                    }
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 9)
+            .padding(.top, 4)
             .padding(.bottom, 16)
         }
     }
@@ -1349,16 +1288,17 @@ struct ContentView: View {
                 itemIDs: playlists.map(\.id),
                 itemLetters: playlists.map(\.sectionLetter),
                 isAlphabetical: true,
-                itemsPerRow: 3,
-                estimatedRowHeight: showGridTitles ? 177 : 131,
+                itemsPerRow: 2,
+                estimatedRowHeight: showGridTitles ? 236 : 188,
                 estimatedPadding: 36,
                 onRefresh: { await library.refreshLibrary() },
+                onScrollOffsetChange: scrollTracker(.playlists),
                 scrollToTopSignal: scrollToTop.signal(for: .playlists)
             ) {
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: showGridTitles ? 10 : 6), count: 3),
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2),
                     alignment: .leading,
-                    spacing: showGridTitles ? 18 : 6
+                    spacing: showGridTitles ? 22 : 14
                 ) {
                     let playingPlaylistID = library.nowPlayingPlaylistID
                     ForEach(playlists) { playlist in
@@ -1375,12 +1315,11 @@ struct ContentView: View {
                         }
                         .buttonStyle(TilePressStyle())
                         .queueMenu(playlist.items)
-                        .underHeaderBlur()
                         .id(playlist.id)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 20)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
                 .padding(.bottom, 16)
             }
         }
@@ -1408,7 +1347,7 @@ struct ContentView: View {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
             }
-            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(HushStyle.paper)
             .padding(.horizontal, 18)
             .padding(.vertical, 11)
@@ -1440,7 +1379,7 @@ struct ContentView: View {
                     guard let url = URL(string: "music://") else { return }
                     UIApplication.shared.open(url)
                 }
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(HushStyle.paper)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 11)
@@ -1453,31 +1392,6 @@ struct ContentView: View {
     }
 }
 
-/// Before iOS 26 there is no Liquid Glass or scroll-edge effect, so the floating header gets a
-/// soft dark shade behind it (fading out below the tabs) to stay readable. On iOS 26 and later
-/// this draws nothing.
-private struct LegacyHeaderShade: View {
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            EmptyView()
-        } else {
-            LinearGradient(
-                stops: [
-                    .init(color: HushStyle.paper.opacity(0.9), location: 0),
-                    .init(color: HushStyle.paper.opacity(0.7), location: 0.7),
-                    .init(color: HushStyle.paper.opacity(0), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .padding(.bottom, -18)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-}
-
 private struct PlaylistTile: View {
     let playlist: MusicPlaylist
     let artwork: Artwork?
@@ -1486,7 +1400,7 @@ private struct PlaylistTile: View {
     let zoomNamespace: Namespace.ID
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             // Square cell sized by the grid column, matching album tiles.
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
@@ -1496,23 +1410,25 @@ private struct PlaylistTile: View {
                             items: playlist.artworkItems,
                             size: geometry.size.width,
                             artwork: artwork,
-                            cornerRadius: 9
+                            cornerRadius: 10
                         )
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    if isPlaying { NowPlayingBadge(size: 22).padding(6) }
+                    if isPlaying { NowPlayingBadge(size: 24).padding(8) }
                 }
-                .pageZoomSource(PlayerArtworkTransitionID.playlistGridTile(playlist.id), in: zoomNamespace, cornerRadius: 9)
+                .pageZoomSource(PlayerArtworkTransitionID.playlistGridTile(playlist.id), in: zoomNamespace, cornerRadius: 10)
             if showsTitle {
-                Text(playlist.name)
-                    .font(.system(size: 13, weight: .medium, design: .serif))
-                    .foregroundStyle(HushStyle.ink)
-                    .lineLimit(1)
-                Text("\(playlist.trackCount) songs")
-                    .font(.system(size: 10, weight: .regular, design: .rounded))
-                    .foregroundStyle(HushStyle.muted)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(playlist.name)
+                        .font(.system(size: 15, weight: .regular, design: .serif))
+                        .foregroundStyle(HushStyle.ink)
+                        .lineLimit(1)
+                    Text("\(playlist.trackCount) songs")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(HushStyle.muted)
+                        .lineLimit(1)
+                }
             }
         }
         // VoiceOver still reads the name when titles are hidden.
@@ -1552,11 +1468,11 @@ private struct ArtistTile: View {
                 }
                 .pageZoomSource(PlayerArtworkTransitionID.artistGridTile(artist.id), in: zoomNamespace, cornerRadius: photoDiameter / 2)
             Text(artist.name)
-                .font(.system(size: 12.5, weight: .medium, design: .serif))
+                .font(.system(size: 14, weight: .regular, design: .serif))
                 .foregroundStyle(HushStyle.ink)
                 .lineLimit(1)
             Text(artist.songCount == 1 ? "1 song" : "\(artist.songCount) songs")
-                .font(.system(size: 10, weight: .regular, design: .rounded))
+                .font(.system(size: 12))
                 .foregroundStyle(HushStyle.muted)
                 .lineLimit(1)
         }
@@ -1572,21 +1488,23 @@ private struct AlbumTile: View {
     let zoomNamespace: Namespace.ID
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ArtworkView(item: album.artworkItem, cornerRadius: 9)
+        VStack(alignment: .leading, spacing: 8) {
+            ArtworkView(item: album.artworkItem, cornerRadius: 10)
                 .overlay(alignment: .bottomTrailing) {
-                    if isPlaying { NowPlayingBadge(size: 22).padding(6) }
+                    if isPlaying { NowPlayingBadge(size: 24).padding(8) }
                 }
-                .pageZoomSource(PlayerArtworkTransitionID.albumGridTile(album.id), in: zoomNamespace, cornerRadius: 9)
+                .pageZoomSource(PlayerArtworkTransitionID.albumGridTile(album.id), in: zoomNamespace, cornerRadius: 10)
             if showsTitle {
-                Text(album.title)
-                    .font(.system(size: 13, weight: .medium, design: .serif))
-                    .foregroundStyle(HushStyle.ink)
-                    .lineLimit(1)
-                Text(album.artist)
-                    .font(.system(size: 10, weight: .regular, design: .rounded))
-                    .foregroundStyle(HushStyle.muted)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(album.title)
+                        .font(.system(size: 15, weight: .regular, design: .serif))
+                        .foregroundStyle(HushStyle.ink)
+                        .lineLimit(1)
+                    Text(album.artist)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(HushStyle.muted)
+                        .lineLimit(1)
+                }
             }
         }
         // VoiceOver still reads the name when titles are hidden.
@@ -1601,7 +1519,7 @@ private struct SongRow: View {
     let artworkNamespace: Namespace.ID
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: 14) {
             songArtwork
                 .overlay(alignment: .bottomTrailing) {
                     if isCurrent {
@@ -1609,32 +1527,26 @@ private struct SongRow: View {
                             .offset(x: 3, y: 3)
                     }
                 }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(item.title ?? "Untitled")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
+                    .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
+                    .foregroundStyle(HushStyle.ink)
                     .lineLimit(1)
-                Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 12))
+                Text(item.artist ?? "Unknown Artist")
+                    .font(.system(size: 13.5))
                     .foregroundStyle(HushStyle.muted)
                     .lineLimit(1)
             }
-            Spacer(minLength: 4)
-            if item.playCount > 0 {
-                Text("\(item.playCount)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-                    .foregroundStyle(HushStyle.muted.opacity(0.8))
-                    .accessibilityLabel("Played \(item.playCount) times")
-            }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 8)
+        .frame(height: 64)
         .contentShape(Rectangle())
     }
 
     @ViewBuilder
     private var songArtwork: some View {
-        let artwork = ArtworkView(item: item, cornerRadius: 10, size: CGSize(width: 120, height: 120))
-            .frame(width: 54, height: 54)
+        let artwork = ArtworkView(item: item, cornerRadius: 6, size: CGSize(width: 120, height: 120))
+            .frame(width: 48, height: 48)
 
         if #available(iOS 18.0, *) {
             artwork.matchedTransitionSource(
@@ -2048,7 +1960,7 @@ private struct AlphabeticalLetterIndex<ItemID: Hashable>: View {
                         scheduleFocusReset(for: index)
                     } label: {
                         Text(target.letter)
-                            .font(.system(size: isActive ? activeSize : regularSize, weight: .semibold, design: .rounded))
+                            .font(.system(size: isActive ? activeSize : regularSize, weight: .semibold))
                             .foregroundStyle(isActive ? HushStyle.accent : HushStyle.muted)
                             .frame(maxWidth: .infinity)
                             .frame(height: cellHeight)

@@ -1,5 +1,6 @@
 import MediaPlayer
 import SwiftUI
+import UIKit
 
 struct AlbumDetailView: View {
     @EnvironmentObject private var library: MusicLibraryStore
@@ -20,102 +21,62 @@ struct AlbumDetailView: View {
             HushStyle.paper.ignoresSafeArea()
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(spacing: 0) {
                         albumHeaderArtwork
-                        .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 9)
-                        .padding(.horizontal, 28)
-                        .padding(.top, 10)
-                        VStack(alignment: .leading, spacing: 7) {
+                            .padding(.horizontal, 52)
+                            .padding(.top, 10)
+                        VStack(spacing: 6) {
                             Text(album.title)
-                                .font(.system(size: 29, weight: .regular, design: .serif))
-                                .tracking(-0.5)
+                                .font(.system(size: 31, weight: .regular, design: .serif))
+                                .tracking(-0.3)
                                 .foregroundStyle(HushStyle.ink)
-                            HStack(spacing: 7) {
-                                albumArtistLink
-                                Text("·")
-                                Text(albumDetails)
-                                    .lineLimit(1)
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(HushStyle.muted)
+                                .multilineTextAlignment(.center)
+                            albumArtistLink
+                                .font(.system(size: 16, weight: .medium))
+                            Text(albumDetails)
+                                .font(.system(size: 13))
+                                .foregroundStyle(HushStyle.muted)
+                                .lineLimit(1)
                         }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 22)
-                        HStack(spacing: 10) {
-                            Button {
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 26)
+                        PlayShuffleButtons(
+                            onPlay: {
                                 guard let first = album.items.first else { return }
                                 onPlay(first, album.items, PlayerArtworkTransitionID.albumPlayButton(first.persistentID))
-                            } label: {
-                                HStack(spacing: 9) {
-                                    Image(systemName: "play.fill").font(.system(size: 12, weight: .bold))
-                                    Text("Play album").font(.system(size: 14, weight: .semibold, design: .rounded))
-                                }
-                                .foregroundStyle(HushStyle.paper)
-                                .padding(.horizontal, 18)
-                                .frame(height: 43)
-                                .background(HushStyle.accent, in: Capsule())
-                            }
-                            .buttonStyle(PopButtonStyle())
-
-                            Button(action: onShuffle) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "shuffle").font(.system(size: 12, weight: .bold))
-                                    Text("Shuffle").font(.system(size: 14, weight: .semibold, design: .rounded))
-                                }
-                                .foregroundStyle(HushStyle.accent)
-                                .padding(.horizontal, 18)
-                                .frame(height: 43)
-                                .hushGlassBackground(Capsule())
-                                .contentShape(Capsule())
-                            }
-                            // Plain press style: the glass never scales or animates.
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 18)
-                        VStack(spacing: 0) {
+                            },
+                            onShuffle: onShuffle
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
+                        LazyVStack(spacing: 0) {
+                            let currentID = library.currentItem?.persistentID
                             ForEach(Array(album.items.enumerated()), id: \.element.persistentID) { index, item in
-                                HStack(spacing: 8) {
-                                    Button {
-                                        onPlay(item, album.items, PlayerArtworkTransitionID.albumTrack(item.persistentID))
-                                    } label: {
-                                        let isCurrent = library.currentItem?.persistentID == item.persistentID
-                                        HStack(spacing: 13) {
-                                            TrackNumberLabel(number: index + 1, isCurrent: isCurrent)
-                                                .frame(width: 24, alignment: .leading)
-                                            albumTrackArtwork(item)
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(item.title ?? "Untitled")
-                                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
-                                                    .lineLimit(1)
-                                                Text(item.artist ?? album.artist)
-                                                    .font(.system(size: 12))
-                                                    .foregroundStyle(HushStyle.muted)
-                                                    .lineLimit(1)
-                                            }
-                                            Spacer(minLength: 6)
-                                            if item.playCount > 0 {
-                                                Text("\(item.playCount)")
-                                                    .font(.system(size: 11, design: .rounded).monospacedDigit())
-                                                    .foregroundStyle(HushStyle.muted.opacity(0.8))
-                                            }
-                                        }
-                                        .padding(.vertical, 12)
-                                        .contentShape(Rectangle())
+                                let isCurrent = currentID == item.persistentID
+                                Button {
+                                    // The player grows out of the album cover.
+                                    onPlay(item, album.items, PlayerArtworkTransitionID.albumPlayButton(album.items.first?.persistentID ?? item.persistentID))
+                                } label: {
+                                    HStack(spacing: 16) {
+                                        TrackNumberLabel(number: index + 1, isCurrent: isCurrent)
+                                            .frame(width: 22, alignment: .trailing)
+                                        Text(item.title ?? "Untitled")
+                                            .font(.system(size: 16, weight: isCurrent ? .semibold : .regular))
+                                            .foregroundStyle(HushStyle.ink)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
                                     }
-                                    .buttonStyle(.plain)
-                                    .frame(maxWidth: .infinity)
-                                    .queueMenu([item])
+                                    .frame(height: 52)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .queueMenu([item])
                                 .id(item.persistentID)
-                                if index < album.items.count - 1 {
-                                    Rectangle().fill(HushStyle.line.opacity(0.75)).frame(height: 0.6).padding(.leading, 37)
-                                }
                             }
                         }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 22)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
                         .padding(.bottom, 24)
                     }
                 }
@@ -123,10 +84,18 @@ struct AlbumDetailView: View {
                 .onAppear { revealCurrentTrack(with: proxy) }
             }
         }
-        // System back button (accent chevron, no title) keeps the standard swipe-from-edge to go back.
-        // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
-        // Glass over the page.
-        .toolbarRole(.editor)
+        .plainPageHeader {
+            Button {
+                library.playNext(album.items)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button {
+                library.addToQueue(album.items)
+            } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+        }
     }
 
     /// Opening the album that's playing brings its current song into view — only when that song
@@ -146,7 +115,7 @@ struct AlbumDetailView: View {
         }
     }
 
-    /// The album artist, in the accent when it leads to their page; several artists → a short menu.
+    /// The album artist, which leads to their page; several artists → a short menu.
     @ViewBuilder
     private var albumArtistLink: some View {
         let credited = onOpenArtist == nil ? [] : library.creditedArtists(in: album.artist)
@@ -156,7 +125,7 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.accent)
+                    .foregroundStyle(HushStyle.ink)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the artist")
@@ -170,24 +139,23 @@ struct AlbumDetailView: View {
             } label: {
                 Text(album.artist)
                     .lineLimit(1)
-                    .foregroundStyle(HushStyle.accent)
+                    .foregroundStyle(HushStyle.ink)
             }
             .accessibilityHint("Choose an artist to open")
         } else {
             Text(album.artist)
                 .lineLimit(1)
+                .foregroundStyle(HushStyle.ink)
         }
     }
 
-    /// "12 songs · 42 min · 2019" (length and year when known).
+    /// "2019 · 12 songs" (the year when known).
     private var albumDetails: String {
-        var parts = [album.trackCount == 1 ? "1 song" : "\(album.trackCount) songs"]
-        if let length = HushStyle.durationText(album.items.reduce(0) { $0 + $1.playbackDuration }) {
-            parts.append(length)
-        }
+        var parts: [String] = []
         if let released = album.items.lazy.compactMap(\.releaseDate).first {
             parts.append(String(Calendar.current.component(.year, from: released)))
         }
+        parts.append(album.trackCount == 1 ? "1 song" : "\(album.trackCount) songs")
         return parts.joined(separator: " · ")
     }
 
@@ -195,34 +163,114 @@ struct AlbumDetailView: View {
     private var albumHeaderArtwork: some View {
         if let firstTrack = album.items.first {
             if #available(iOS 18.0, *) {
-                ArtworkView(item: album.artworkItem, cornerRadius: 22, size: CGSize(width: 900, height: 900))
+                ArtworkView(item: album.artworkItem, cornerRadius: 12, size: CGSize(width: 900, height: 900))
                     .matchedTransitionSource(
                         id: PlayerArtworkTransitionID.albumPlayButton(firstTrack.persistentID),
                         in: artworkNamespace
                     )
             } else {
-                ArtworkView(item: album.artworkItem, cornerRadius: 22, size: CGSize(width: 900, height: 900))
+                ArtworkView(item: album.artworkItem, cornerRadius: 12, size: CGSize(width: 900, height: 900))
             }
         } else {
-            ArtworkView(item: album.artworkItem, cornerRadius: 22, size: CGSize(width: 900, height: 900))
+            ArtworkView(item: album.artworkItem, cornerRadius: 12, size: CGSize(width: 900, height: 900))
         }
     }
+}
 
-    @ViewBuilder
-    private func albumTrackArtwork(_ item: MPMediaItem) -> some View {
-        // Every track shows the album's cover: one image for the whole page (usually already
-        // decoded for the grid tile) instead of a separate fetch per track while the page slides in.
-        let artwork = ArtworkView(item: album.artworkItem ?? item, cornerRadius: 8, size: CGSize(width: 120, height: 120))
-            .frame(width: 42, height: 42)
+/// Play (filled) and Shuffle (outlined), side by side and equally wide: the album, playlist and
+/// artist pages all use these.
+struct PlayShuffleButtons: View {
+    let onPlay: () -> Void
+    let onShuffle: () -> Void
 
-        if #available(iOS 18.0, *) {
-            artwork.matchedTransitionSource(
-                id: PlayerArtworkTransitionID.albumTrack(item.persistentID),
-                in: artworkNamespace
-            )
-        } else {
-            artwork
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onPlay) {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill").font(.system(size: 14, weight: .bold))
+                    Text("Play").font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(Color.black)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(HushStyle.ink, in: Capsule())
+            }
+            .buttonStyle(PopButtonStyle())
+
+            Button(action: onShuffle) {
+                HStack(spacing: 8) {
+                    Image(systemName: "shuffle").font(.system(size: 15, weight: .semibold))
+                    Text("Shuffle").font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(HushStyle.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .overlay(Capsule().strokeBorder(HushStyle.outline, lineWidth: 1))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(PopButtonStyle())
         }
+    }
+}
+
+/// A plain black bar at the top of a page: back on the left, a "more" menu on the right. The page
+/// scrolls under it. Replaces the system bar (and its glass back button).
+private struct PlainPageHeader<MenuContent: View>: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+    let menu: MenuContent
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(HushStyle.ink)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    Spacer()
+                    Menu {
+                        menu
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(HushStyle.ink)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("More")
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 44)
+                .background(HushStyle.paper)
+            }
+    }
+}
+
+/// The pages hide the system bar for their plain header; this keeps the swipe from the left edge
+/// going back.
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        viewControllers.count > 1
+    }
+}
+
+extension View {
+    /// See `PlainPageHeader`.
+    func plainPageHeader<MenuContent: View>(@ViewBuilder menu: () -> MenuContent) -> some View {
+        modifier(PlainPageHeader(menu: menu()))
     }
 }
 
@@ -233,11 +281,11 @@ struct TrackNumberLabel: View {
 
     var body: some View {
         if isCurrent {
-            NowPlayingBars(height: 11)
+            NowPlayingBars(height: 13)
         } else {
-            Text(String(format: "%02d", number))
-                .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-                .foregroundStyle(HushStyle.muted.opacity(0.8))
+            Text("\(number)")
+                .font(.system(size: 15).monospacedDigit())
+                .foregroundStyle(HushStyle.muted)
         }
     }
 }
@@ -335,49 +383,15 @@ struct ArtistDetailView: View {
                         .foregroundStyle(HushStyle.muted)
                         .padding(.top, 7)
 
-                    HStack(spacing: 10) {
-                        Button {
+                    PlayShuffleButtons(
+                        onPlay: {
                             guard let first = allSongs.first else { return }
                             onPlay(first, allSongs, transitionID)
-                        } label: {
-                            Label("Play", systemImage: "play.fill")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(HushStyle.paper)
-                                .padding(.horizontal, 20)
-                                .frame(height: 44)
-                                .background(HushStyle.accent, in: Capsule())
-                        }
-                        .buttonStyle(PopButtonStyle())
-
-                        Button(action: onShuffle) {
-                            Label("Shuffle", systemImage: "shuffle")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(HushStyle.accent)
-                                .padding(.horizontal, 20)
-                                .frame(height: 44)
-                                .hushGlassBackground(Capsule())
-                                .contentShape(Capsule())
-                        }
-                        // Plain press style: the glass never scales or animates.
-                        .buttonStyle(.plain)
-
-                        // Favorite: favorites come first on the Artists tab.
-                        let isFavorite = library.isFavorite(artistID: artist.id)
-                        Button {
-                            library.toggleFavorite(artistID: artist.id)
-                        } label: {
-                            Image(systemName: isFavorite ? "heart.fill" : "heart")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(HushStyle.accent)
-                                .contentTransition(.symbolEffect(.replace))
-                                .frame(width: 44, height: 44)
-                                .hushGlassBackground(Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
-                    }
-                    .padding(.top, 19)
+                        },
+                        onShuffle: onShuffle
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
 
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(artist.albums) { album in
@@ -400,8 +414,29 @@ struct ArtistDetailView: View {
             }
             .miniPlayerClearance()
         }
-        // System back button (accent chevron, no title); transparent bar so it floats as glass.
-        .toolbarRole(.editor)
+        .plainPageHeader {
+            // Favorites come first on the Artists tab.
+            let isFavorite = library.isFavorite(artistID: artist.id)
+            Button {
+                library.toggleFavorite(artistID: artist.id)
+            } label: {
+                if isFavorite {
+                    Label("Remove from Favorites", systemImage: "heart.slash")
+                } else {
+                    Label("Add to Favorites", systemImage: "heart")
+                }
+            }
+            Button {
+                library.playNext(allSongs)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button {
+                library.addToQueue(allSongs)
+            } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+        }
     }
 
     /// "4 albums · 37 songs".
@@ -472,8 +507,8 @@ struct ArtistDetailView: View {
                     .frame(width: 24, alignment: .leading)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title ?? "Untitled")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(HushStyle.ink)
                         .lineLimit(1)
                     if let credit {
                         Text(credit)
@@ -485,7 +520,7 @@ struct ArtistDetailView: View {
                 Spacer(minLength: 6)
                 if item.playCount > 0 {
                     Text("\(item.playCount)")
-                        .font(.system(size: 11, design: .rounded).monospacedDigit())
+                        .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(HushStyle.muted.opacity(0.8))
                 }
             }

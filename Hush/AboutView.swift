@@ -27,7 +27,7 @@ struct AboutView: View {
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .foregroundStyle(HushStyle.ink)
                         Text(versionText)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(HushStyle.muted)
                             .padding(.top, 2)
                     }
@@ -47,7 +47,7 @@ struct AboutView: View {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                             openURL(url)
                         }
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(HushStyle.accent)
                         .buttonStyle(.plain)
                     }
@@ -104,7 +104,7 @@ private struct AboutSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
                 .foregroundStyle(HushStyle.accent)
                 .accessibilityAddTraits(.isHeader)
@@ -148,7 +148,7 @@ private struct CreditRow: View {
                     Link("View License", destination: url)
                 }
             }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(HushStyle.accent)
             .tint(HushStyle.accent)
             .padding(.top, 2)

@@ -35,8 +35,7 @@ struct NowPlayingView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     topBar
-                        .playerGlassGroup()
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 8)
 
                     // The cover is drawn behind everything (NowPlayingBackdrop). This keeps its
                     // place, so the title starts just below it.
@@ -44,29 +43,29 @@ struct NowPlayingView: View {
                         .frame(height: layout.titleGap)
 
                     trackInformation
-                        .playerGlassGroup()
                         .padding(.horizontal, 24)
 
-                    Spacer(minLength: 14)
+                    Spacer(minLength: 20)
 
                     TimelineView(.animation(minimumInterval: 1.0 / 4.0, paused: !playback.isPlaying)) { _ in
                         PlaybackScrubber(
                             duration: duration,
                             position: library.currentPlaybackTime,
                             isPlaying: playback.isPlaying,
-                            onSeek: library.seek(to:),
-                            tint: HushStyle.accent
+                            onSeek: library.seek(to:)
                         )
                     }
                     .padding(.horizontal, 24)
 
-                    Spacer(minLength: 10)
+                    Spacer(minLength: 16)
 
                     transportControls
-                        .playerGlassGroup()
-                        .padding(.horizontal, 24)
 
-                    Spacer(minLength: 14)
+                    Spacer(minLength: 16)
+
+                    modeControls
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, minHeight: max(geometry.size.height, 0))
             }
@@ -94,73 +93,30 @@ struct NowPlayingView: View {
                 onMinimize()
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(HushStyle.accent)
-                    .frame(width: 42, height: 42)
-                    .playerGlass(in: Circle())
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back to library")
 
-            Spacer(minLength: 10)
-
-            playingFrom
-
-            Spacer(minLength: 10)
+            Spacer()
 
             Button {
                 showingQueue = true
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(HushStyle.accent)
-                    .frame(width: 42, height: 42)
-                    .playerGlass(in: Circle())
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Up Next")
             .accessibilityHint("Shows the queue so you can reorder, remove or add songs")
         }
-        .frame(height: 48)
-        .padding(.top, 4)
-    }
-
-    /// Top center: "Playing from" the album, artist or playlist you started — tap to go back there.
-    /// Shows "Hush" when the music was started from Songs or search.
-    @ViewBuilder
-    private var playingFrom: some View {
-        if let source = library.playbackSource, let origin = library.title(for: source) {
-            Button {
-                onGoTo(source)
-            } label: {
-                VStack(spacing: 2) {
-                    Text("PLAYING FROM \(origin.kind.uppercased())")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .tracking(0.8)
-                        .foregroundStyle(.white.opacity(0.82))
-                        .lineLimit(1)
-                    HStack(spacing: 3) {
-                        Text(origin.name)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                }
-                .shadow(color: .black.opacity(0.45), radius: 5, y: 1)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Playing from \(origin.kind) \(origin.name)")
-            .accessibilityHint("Closes the player and opens it")
-        } else {
-            Text("Hush")
-                .font(HushStyle.brandFont(size: 18))
-                .foregroundStyle(HushStyle.accent)
-                .shadow(color: .black.opacity(0.45), radius: 5, y: 1)
-        }
+        .frame(height: 44)
     }
 
     /// The artist name leads to their page (a short menu when several are credited), like Apple Music.
@@ -170,8 +126,8 @@ struct NowPlayingView: View {
         let text = credit ?? "Your music library"
         let credited = library.creditedArtists(in: credit)
         let label = Text(text)
-            .font(.system(size: 15, weight: .medium, design: .rounded))
-            .foregroundStyle(HushStyle.ink.opacity(0.72))
+            .font(.system(size: 16))
+            .foregroundStyle(HushStyle.muted)
             .lineLimit(1)
         if credited.count == 1, let artist = credited.first {
             Button {
@@ -200,93 +156,94 @@ struct NowPlayingView: View {
     private var trackInformation: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(library.currentItem?.title ?? "Choose something to play")
-                .font(.system(size: 27, weight: .regular, design: .serif))
-                .tracking(-0.4)
+                .font(.system(size: 29, weight: .regular, design: .serif))
+                .tracking(-0.3)
                 .foregroundStyle(HushStyle.ink)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            artistLine
-
-            if let album = currentAlbum {
-                // Tap the album name to go to the album (like Apple Music) — always offered when the
-                // song's album is in your library.
-                let songAlbumTitle = library.currentItem?.albumTitle ?? ""
-                let albumTitle = songAlbumTitle.isEmpty ? album.title : songAlbumTitle
-                Button {
-                    onGoTo(.album(album.id))
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(albumTitle.isEmpty ? "Go to Album" : albumTitle)
+            // "Artist · Album": the artist opens their page, the album opens the album.
+            HStack(spacing: 6) {
+                artistLine
+                    .layoutPriority(1)
+                if let album = currentAlbum {
+                    let songAlbumTitle = library.currentItem?.albumTitle ?? ""
+                    let albumTitle = songAlbumTitle.isEmpty ? album.title : songAlbumTitle
+                    Text("·")
+                        .font(.system(size: 16))
+                        .foregroundStyle(HushStyle.muted)
+                        .accessibilityHidden(true)
+                    Button {
+                        onGoTo(.album(album.id))
+                    } label: {
+                        Text(albumTitle)
+                            .font(.system(size: 16))
+                            .foregroundStyle(HushStyle.muted)
                             .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(HushStyle.accent.opacity(0.95))
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Go to album \(albumTitle)")
+                } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
+                    Text("·")
+                        .font(.system(size: 16))
+                        .foregroundStyle(HushStyle.muted)
+                        .accessibilityHidden(true)
+                    Text(albumTitle)
+                        .font(.system(size: 16))
+                        .foregroundStyle(HushStyle.muted)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Go to album \(albumTitle)")
-            } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
-                Text(albumTitle)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(HushStyle.ink.opacity(0.6))
-                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Keeps the words crisp where they sit on the last of the cover's fade.
-        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Previous, play/pause and next, centred.
     private var transportControls: some View {
-        HStack(spacing: 0) {
-            repeatButton
-                .frame(maxWidth: .infinity)
-
+        HStack(spacing: 48) {
             Button { library.skipBack() } label: {
                 Image(systemName: "backward.end.fill")
-                    .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(HushStyle.accent)
-                    .frame(width: 58, height: 58)
-                    .playerGlass(in: Circle())
-                    .contentShape(Circle())
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(width: 56, height: 56)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Previous track")
-            .frame(maxWidth: .infinity)
 
             Button { library.togglePlayback() } label: {
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(HushStyle.paper)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Color.black)
                     .popSymbolSwap(isPlaying: playback.isPlaying)
                     .offset(x: playback.isPlaying ? 0 : 2)
                     .frame(width: 76, height: 76)
-                    .background(HushStyle.accent, in: Circle())
+                    .background(HushStyle.ink, in: Circle())
             }
             .buttonStyle(PopButtonStyle())
             .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
-            .frame(maxWidth: .infinity)
 
             Button { library.skipForward() } label: {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(HushStyle.accent)
-                    .frame(width: 58, height: 58)
-                    .playerGlass(in: Circle())
-                    .contentShape(Circle())
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(HushStyle.ink)
+                    .frame(width: 56, height: 56)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Next track")
-            .frame(maxWidth: .infinity)
-
-            shuffleButton
-                .frame(maxWidth: .infinity)
         }
-        .padding(.top, 4)
+    }
+
+    /// Shuffle at the left edge, repeat at the right: grey when off, bright when on.
+    private var modeControls: some View {
+        HStack {
+            shuffleButton
+            Spacer()
+            repeatButton
+        }
     }
 
     private var shuffleButton: some View {
@@ -295,18 +252,10 @@ struct NowPlayingView: View {
         return Button {
             library.toggleShuffle()
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
-                    .frame(width: 36, height: 36)
-                    .playerGlass(in: Circle())
-                Text(isEnabled ? "ON" : "OFF")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(0.7)
-                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
-            }
-            .frame(width: 54, height: 64)
+            Image(systemName: "shuffle")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(isEnabled ? HushStyle.ink : HushStyle.iconOff)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -318,23 +267,14 @@ struct NowPlayingView: View {
     private var repeatButton: some View {
         let isEnabled = playback.repeatMode == .all || playback.repeatMode == .one
         let symbol = playback.repeatMode == .one ? "repeat.1" : "repeat"
-        let stateLabel = repeatShortLabel
 
         return Button {
             library.cycleRepeatMode()
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
-                    .frame(width: 36, height: 36)
-                    .playerGlass(in: Circle())
-                Text(stateLabel)
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(0.7)
-                    .foregroundStyle(isEnabled ? HushStyle.accent : HushStyle.muted.opacity(0.75))
-            }
-            .frame(width: 54, height: 64)
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(isEnabled ? HushStyle.ink : HushStyle.iconOff)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -355,19 +295,6 @@ struct NowPlayingView: View {
             return "Off"
         }
     }
-
-    private var repeatShortLabel: String {
-        switch playback.repeatMode {
-        case .all:
-            return "ALL"
-        case .one:
-            return "ONE"
-        case .none, .default:
-            return "OFF"
-        @unknown default:
-            return "OFF"
-        }
-    }
 }
 
 private struct PlaybackScrubber: View {
@@ -375,7 +302,6 @@ private struct PlaybackScrubber: View {
     let position: TimeInterval
     let isPlaying: Bool
     let onSeek: (TimeInterval) -> Void
-    var tint: Color = HushStyle.accent
 
     @State private var isScrubbing = false
     @State private var scrubPosition: TimeInterval = 0
@@ -401,35 +327,57 @@ private struct PlaybackScrubber: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { sliderValue },
-                    set: { scrubPosition = $0 }
-                ),
-                in: 0...max(duration, 1),
-                onEditingChanged: { editing in
-                    if editing {
-                        scrubPosition = sliderValue
-                        isScrubbing = true
-                    } else {
-                        pendingSeekPosition = scrubPosition
-                        pendingSeekDate = .now
-                        Haptics.tap()
-                        onSeek(scrubPosition)
-                        isScrubbing = false
-                    }
+        VStack(spacing: 10) {
+            // A thin track you can drag anywhere along (a taller invisible area takes the touch).
+            GeometryReader { geometry in
+                let width = max(geometry.size.width, 1)
+                let fraction = duration > 0 ? CGFloat(sliderValue / max(duration, 1)) : 0
+                ZStack(alignment: .leading) {
+                    Capsule().fill(HushStyle.track)
+                    Capsule().fill(HushStyle.ink).frame(width: width * min(max(fraction, 0), 1))
                 }
-            )
-            .tint(tint)
-            .disabled(duration <= 0)
+                .frame(height: isScrubbing ? 5 : 3)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard duration > 0 else { return }
+                            if !isScrubbing {
+                                isScrubbing = true
+                            }
+                            scrubPosition = Double(min(max(value.location.x / width, 0), 1)) * duration
+                        }
+                        .onEnded { _ in
+                            guard isScrubbing else { return }
+                            pendingSeekPosition = scrubPosition
+                            pendingSeekDate = .now
+                            Haptics.tap()
+                            onSeek(scrubPosition)
+                            isScrubbing = false
+                        }
+                )
+                .animation(.easeOut(duration: 0.15), value: isScrubbing)
+            }
+            .frame(height: 20)
+            .padding(.vertical, -8)
+            .accessibilityElement()
+            .accessibilityLabel("Position")
+            .accessibilityValue(timestamp(sliderValue))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onSeek(min(sliderValue + 10, duration))
+                case .decrement: onSeek(max(sliderValue - 10, 0))
+                @unknown default: break
+                }
+            }
 
             HStack {
                 Text(timestamp(sliderValue))
                 Spacer()
                 Text("−\(timestamp(max(duration - sliderValue, 0)))")
             }
-            .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+            .font(.system(size: 12).monospacedDigit())
             .foregroundStyle(HushStyle.muted)
         }
     }
@@ -441,42 +389,17 @@ private struct PlaybackScrubber: View {
     }
 }
 
-// MARK: - Liquid Glass + artwork theming
-
-private extension View {
-    /// Liquid Glass on iOS 26; a frosted material on earlier versions. Left untinted so the
-    /// accent icons on top keep their exact color on any album background.
-    @ViewBuilder
-    func playerGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(Glass.regular.tint(tint), in: shape)
-        } else {
-            self
-                .background((tint ?? .clear).opacity(0.55), in: shape)
-                .background(.ultraThinMaterial, in: shape)
-        }
-    }
-
-    /// Renders all glass on the player together, as Apple recommends, instead of one pass per button.
-    @ViewBuilder
-    func playerGlassGroup() -> some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 0) { self }
-        } else {
-            self
-        }
-    }
-}
-
 /// Where the cover sits on the player, worked out once from the screen so the cover and the
 /// controls agree.
 private struct PlayerArtLayout: Equatable {
-    /// Top bar height (48) plus its top padding (4).
-    private static let topBarHeight: CGFloat = 52
-    /// Space between the top bar and the cover, and between the cover and the title.
-    private static let coverGap: CGFloat = 14
-    /// Room the title, scrubber and buttons need below the cover (two-line title included).
-    private static let controlsHeight: CGFloat = 290
+    /// The top bar's height.
+    private static let topBarHeight: CGFloat = 44
+    /// Space between the top bar and the cover.
+    private static let coverGap: CGFloat = 2
+    /// Space between the cover and the title.
+    private static let titleGap: CGFloat = 30
+    /// Room the title, scrubber, transport and shuffle/repeat row need below the cover.
+    private static let controlsHeight: CGFloat = 318
 
     let width: CGFloat
     let screenHeight: CGFloat
@@ -493,7 +416,7 @@ private struct PlayerArtLayout: Equatable {
         self.topInset = topInset
         screenHeight = height + topInset + bottomInset
         drop = topInset + Self.topBarHeight + Self.coverGap
-        let room = screenHeight - bottomInset - Self.controlsHeight - Self.coverGap - drop
+        let room = screenHeight - bottomInset - Self.controlsHeight - Self.titleGap - drop
         coverSize = max(min(width, room), 0)
     }
 
@@ -502,7 +425,7 @@ private struct PlayerArtLayout: Equatable {
 
     /// Space between the top bar and the title, so the title starts just below the cover.
     var titleGap: CGFloat {
-        max(coverBottom + Self.coverGap - topInset - Self.topBarHeight, 0)
+        max(coverBottom + Self.titleGap - topInset - Self.topBarHeight, 0)
     }
 }
 
@@ -643,7 +566,7 @@ struct UpNextView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             sectionHeader("Up Next")
                             Text(upNextSubtitle(count: upNext.count))
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(HushStyle.muted)
                                 .textCase(nil)
                         }
@@ -652,7 +575,7 @@ struct UpNextView: View {
                             Button("Clear") {
                                 withAnimation { library.clearUpNext() }
                             }
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(HushStyle.accent)
                             .textCase(nil)
                         }
@@ -719,7 +642,7 @@ private struct QueueRow: View {
                 }
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title ?? "Untitled")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
@@ -816,7 +739,7 @@ struct QueueToast: View {
     var body: some View {
         if let message = queue.toast {
             Label(message, systemImage: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(HushStyle.ink)
                 .symbolRenderingMode(.hierarchical)
                 .padding(.horizontal, 16)

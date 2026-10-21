@@ -10,11 +10,25 @@ enum HushStyle {
     #endif
     static let surface = Color(red: 0.085, green: 0.083, blue: 0.078)
     static let ink = Color(red: 0.945, green: 0.936, blue: 0.906)
+    #if os(iOS)
+    static let muted = Color(red: 0.557, green: 0.549, blue: 0.525)
+    #else
     static let muted = Color(red: 0.610, green: 0.604, blue: 0.584)
+    #endif
     static let gold = Color(red: 0.790, green: 0.660, blue: 0.420)
     #if os(iOS)
     /// The iPhone's accent: off-white, the same as the text. Things filled with it carry black.
     static let accent = ink
+    /// Solid dark cards: the mini player and the search field.
+    static let card = Color(red: 0.082, green: 0.082, blue: 0.078)
+    /// The library tabs you're not on.
+    static let tabIdle = Color(red: 0.373, green: 0.365, blue: 0.349)
+    /// The player's scrubber track.
+    static let track = Color(red: 0.165, green: 0.165, blue: 0.157)
+    /// Shuffle and repeat while they're off.
+    static let iconOff = Color(red: 0.420, green: 0.412, blue: 0.392)
+    /// Outlined buttons (Shuffle).
+    static let outline = Color(red: 0.227, green: 0.224, blue: 0.212)
     #endif
     static let line = Color(red: 0.180, green: 0.173, blue: 0.155)
 

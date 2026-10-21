@@ -39,7 +39,7 @@ struct VideoTile: View {
             .overlay(alignment: .topTrailing) {
                 if let length = Self.lengthText(video.duration) {
                     Text(length)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)

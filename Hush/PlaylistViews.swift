@@ -11,6 +11,8 @@ struct QuietTextField: UIViewRepresentable {
     var fontSize: CGFloat = 15
     var fontWeight: UIFont.Weight = .regular
     var placeholderColor: UIColor = UIColor(HushStyle.muted)
+    /// Puts the cursor in the field as soon as it appears.
+    var focusOnAppear = false
     var onSubmit: () -> Void = {}
 
     func makeUIView(context: Context) -> UITextField {
@@ -28,6 +30,9 @@ struct QuietTextField: UIViewRepresentable {
         field.clearButtonMode = .never
         field.backgroundColor = .clear
         applyStyle(to: field)
+        if focusOnAppear {
+            DispatchQueue.main.async { field.becomeFirstResponder() }
+        }
         return field
     }
 
@@ -47,12 +52,7 @@ struct QuietTextField: UIViewRepresentable {
     }
 
     private func applyStyle(to field: UITextField) {
-        let systemFont = UIFont.systemFont(ofSize: fontSize, weight: fontWeight)
-        if let roundedDescriptor = systemFont.fontDescriptor.withDesign(.rounded) {
-            field.font = UIFont(descriptor: roundedDescriptor, size: fontSize)
-        } else {
-            field.font = systemFont
-        }
+        field.font = UIFont.systemFont(ofSize: fontSize, weight: fontWeight)
         field.textColor = UIColor(HushStyle.ink)
         field.tintColor = UIColor(HushStyle.accent)
         field.attributedPlaceholder = NSAttributedString(
@@ -183,36 +183,17 @@ struct PlaylistDetailView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 7)
 
-                            HStack(spacing: 10) {
-                                Button {
+                            PlayShuffleButtons(
+                                onPlay: {
                                     guard let first = songs.first else { return }
                                     onPlay(first, songs, PlayerArtworkTransitionID.playlistTrack(first.persistentID))
-                                } label: {
-                                    Label("Play", systemImage: "play.fill")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(HushStyle.paper)
-                                        .padding(.horizontal, 20)
-                                        .frame(height: 44)
-                                        .background(HushStyle.accent, in: Capsule())
-                                }
-                                .buttonStyle(PopButtonStyle())
-
-                                Button(action: onShuffle) {
-                                    Label("Shuffle", systemImage: "shuffle")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(HushStyle.accent)
-                                        .padding(.horizontal, 20)
-                                        .frame(height: 44)
-                                        .hushGlassBackground(Capsule())
-                                        .contentShape(Capsule())
-                                }
-                                // Plain press style: the glass never scales or animates.
-                                .buttonStyle(.plain)
-                            }
+                                },
+                                onShuffle: onShuffle
+                            )
+                            .padding(.horizontal, 20)
                             .disabled(songs.isEmpty)
                             .opacity(songs.isEmpty ? 0.45 : 1)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 19)
+                            .padding(.top, 24)
 
                             if songs.isEmpty {
                                 VStack(spacing: 9) {
@@ -260,10 +241,18 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        // System back button (accent chevron, no title) keeps the standard swipe-from-edge to go back.
-        // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
-        // Glass over the page.
-        .toolbarRole(.editor)
+        .plainPageHeader {
+            Button {
+                library.playNext(songs)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button {
+                library.addToQueue(songs)
+            } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+        }
         .tint(HushStyle.accent)
     }
 
@@ -304,8 +293,8 @@ struct PlaylistDetailView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title ?? "Untitled")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(isCurrent ? HushStyle.accent : HushStyle.ink)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(HushStyle.ink)
                     .lineLimit(1)
                 Text([item.artist, item.albumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12))
