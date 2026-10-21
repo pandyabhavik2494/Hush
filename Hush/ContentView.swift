@@ -472,9 +472,6 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             ZStack {
                 HushStyle.paper.ignoresSafeArea()
-                // Hush's own soft light at the top (the same whatever is playing), so the glass
-                // header has something to catch without the library changing color with every song.
-                HushAmbientLight()
                 // The header floats over the library with no panel behind it (App Store style):
                 // each control sits on its own Liquid Glass, and the lists scroll underneath and
                 // stay visible. The pages get the header's measured height as their top inset.

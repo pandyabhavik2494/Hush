@@ -561,30 +561,11 @@ private struct PlayerArtCanvas<Cover: View>: View {
         // Light covers get a stronger shade so the white text and gold controls stay readable.
         let shade = 0.20 + 0.48 * (art?.lowerBrightness ?? 0.4)
         let topShade = 0.30 + 0.25 * (art?.upperBrightness ?? 0.4)
-        let coverTop = layout.drop / max(height, 1)
-        let coverSpan = width / max(height, 1)
         let coverBottom = min(layout.coverBottom / max(height, 1), 0.74)
 
         ZStack(alignment: .top) {
+            // Pure black behind everything; the cover fades into it at both ends.
             HushStyle.paper
-
-            if let art {
-                // The cover's own edge colors carried on: its top color above it, its bottom color
-                // below it. They meet behind the cover, where it is fully opaque — so the cover
-                // fades into plain color at both ends, with nothing blurred or repeated.
-                LinearGradient(
-                    stops: [
-                        .init(color: art.topColor, location: 0),
-                        .init(color: art.topColor, location: coverTop + coverSpan * 0.19),
-                        .init(color: art.bottomColor, location: coverTop + coverSpan * 0.68),
-                        .init(color: art.bottomColor, location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .id(artID)
-                .transition(.opacity)
-            }
 
             // Shade that begins where the cover starts to dissolve and deepens toward the bottom.
             LinearGradient(
@@ -601,6 +582,8 @@ private struct PlayerArtCanvas<Cover: View>: View {
 
             cover
                 .frame(width: width, height: width)
+                // A clean black edge around the art, inside its frame.
+                .overlay(Rectangle().strokeBorder(.black, lineWidth: PlayerArtBorder.width))
                 .mask(
                     LinearGradient(
                         stops: [
@@ -628,17 +611,18 @@ private struct PlayerArtCanvas<Cover: View>: View {
     }
 }
 
-/// What the player draws around a song's cover: the cover's color along its top edge and along its
-/// bottom edge, and how bright each is (0 = black … 1 = white).
+/// Every piece of art on the player page gets this black edge, drawn inside its frame.
+enum PlayerArtBorder {
+    static let width: CGFloat = 4
+}
+
+/// How bright a song's cover is along its top edge and along its bottom edge (0 = black … 1 = white),
+/// so the player can shade more under light covers and keep its text readable.
 final class PlayerArt {
-    let topColor: Color
-    let bottomColor: Color
     let upperBrightness: CGFloat
     let lowerBrightness: CGFloat
 
     init(top: ArtworkPalette.RGB, bottom: ArtworkPalette.RGB) {
-        topColor = Color(red: top.red, green: top.green, blue: top.blue)
-        bottomColor = Color(red: bottom.red, green: bottom.green, blue: bottom.blue)
         upperBrightness = top.brightness
         lowerBrightness = bottom.brightness
     }
@@ -650,61 +634,11 @@ enum ArtworkPalette {
         cache.countLimit = 40
         return cache
     }()
-    // Small (240 px) images, so plenty can be kept: going back to a page shows its glow instantly.
-    private static let blurCache: NSCache<NSNumber, UIImage> = {
-        let cache = NSCache<NSNumber, UIImage>()
-        cache.countLimit = 40
-        return cache
-    }()
     private static let playerArtCache: NSCache<NSNumber, PlayerArt> = {
         let cache = NSCache<NSNumber, PlayerArt>()
         cache.countLimit = 40
         return cache
     }()
-    private static let blurContext = CIContext()
-
-    /// The art blurred and slightly saturated, rendered once per song. Does the work right away on
-    /// the calling thread — screens use `loadBlurredBackdrop` instead so they never stall.
-    static func blurredBackdrop(for item: MPMediaItem?) -> UIImage? {
-        guard let item else { return nil }
-        let key = NSNumber(value: item.persistentID)
-        if let cached = blurCache.object(forKey: key) { return cached }
-        guard let thumbnail = backdropImage(for: item), let image = blur(thumbnail) else { return nil }
-        blurCache.setObject(image, forKey: key)
-        return image
-    }
-
-    /// The blurred art if it has been made before (instant — never does the work itself).
-    static func cachedBackdrop(for item: MPMediaItem?) -> UIImage? {
-        guard let item else { return nil }
-        return blurCache.object(forKey: NSNumber(value: item.persistentID))
-    }
-
-    /// Makes the blurred art without holding up the screen: the small cover is read on the main
-    /// thread (MediaPlayer needs that), and the blur itself runs in the background. Blurring on the
-    /// main thread is what made opening an album or the player stutter for a moment.
-    @MainActor
-    static func loadBlurredBackdrop(for item: MPMediaItem) async -> UIImage? {
-        let key = NSNumber(value: item.persistentID)
-        if let cached = blurCache.object(forKey: key) { return cached }
-        guard let thumbnail = backdropImage(for: item) else { return nil }
-        let blurred = await Task.detached(priority: .userInitiated) {
-            ArtworkPalette.blur(thumbnail)
-        }.value
-        if let blurred { blurCache.setObject(blurred, forKey: key) }
-        return blurred
-    }
-
-    private static func blur(_ thumbnail: UIImage) -> UIImage? {
-        guard let input = CIImage(image: thumbnail) else { return nil }
-        let output = input
-            .clampedToExtent()
-            .applyingGaussianBlur(sigma: 22)
-            .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.3])
-            .cropped(to: input.extent)
-        guard let cgImage = blurContext.createCGImage(output, from: input.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
-    }
 
     /// The player's backdrop for a song if it has been made before (instant).
     static func cachedPlayerArt(for item: MPMediaItem?) -> PlayerArt? {
@@ -924,6 +858,10 @@ private struct QueueRow: View {
         HStack(spacing: 12) {
             ArtworkView(item: item, cornerRadius: 8, size: CGSize(width: 120, height: 120))
                 .frame(width: 46, height: 46)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.black, lineWidth: PlayerArtBorder.width)
+                )
                 .overlay(alignment: .bottomTrailing) {
                     if isCurrent {
                         NowPlayingBadge(size: 17)

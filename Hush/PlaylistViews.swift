@@ -154,8 +154,6 @@ struct PlaylistDetailView: View {
         GeometryReader { geometry in
             ZStack {
                 HushStyle.paper.ignoresSafeArea()
-                // The playlist's cover colors light the top of the page, behind the glass controls.
-                AmbientArtworkGlow(item: playlist.artworkItems.first, height: 560, strength: 0.72)
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -264,7 +262,7 @@ struct PlaylistDetailView: View {
         }
         // System back button (gold chevron, no title) keeps the standard swipe-from-edge to go back.
         // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
-        // Glass over the cover's glow.
+        // Glass over the page.
         .toolbarRole(.editor)
         .tint(HushStyle.gold)
     }

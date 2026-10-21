@@ -2,7 +2,12 @@ import SwiftUI
 
 /// Hush's look, shared by the iPhone and Mac apps: black, warm gold, quiet type.
 enum HushStyle {
+    #if os(iOS)
+    /// The iPhone app sits on pure black, everywhere.
+    static let paper = Color.black
+    #else
     static let paper = Color(red: 0.040, green: 0.039, blue: 0.037)
+    #endif
     static let surface = Color(red: 0.085, green: 0.083, blue: 0.078)
     static let ink = Color(red: 0.945, green: 0.936, blue: 0.906)
     static let muted = Color(red: 0.610, green: 0.604, blue: 0.584)

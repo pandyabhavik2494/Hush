@@ -18,8 +18,6 @@ struct AlbumDetailView: View {
     var body: some View {
         ZStack {
             HushStyle.paper.ignoresSafeArea()
-            // The album's colors light the top of the page, behind the glass controls.
-            AmbientArtworkGlow(item: album.artworkItem, height: 540, strength: 0.72)
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -127,7 +125,7 @@ struct AlbumDetailView: View {
         }
         // System back button (gold chevron, no title) keeps the standard swipe-from-edge to go back.
         // The navigation bar is left transparent, so on iOS 26 the back button floats as Liquid
-        // Glass over the cover's glow.
+        // Glass over the page.
         .toolbarRole(.editor)
     }
 
@@ -316,8 +314,6 @@ struct ArtistDetailView: View {
         let allSongs = artist.allSongs
         ZStack {
             HushStyle.paper.ignoresSafeArea()
-            // The artist's featured cover lights the top of the page, behind the glass controls.
-            AmbientArtworkGlow(item: artist.artworkItem, height: 520, strength: 0.72)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     ArtistPhoto(artist: artist)
