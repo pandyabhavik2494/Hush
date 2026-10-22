@@ -287,24 +287,24 @@ struct ContentView: View {
     // instead of re-sorting the whole library on every redraw (e.g. each play/pause).
     @State private var visibleAlbums: [MusicAlbum] = []
     @State private var visibleAlbumIDs: [UInt64] = []
-    @State private var visibleAlbumLetters: [String] = []
+    @State private var visibleAlbumLetterTargets: [AlphabeticalLetterTarget<UInt64>] = []
     @State private var visibleSongs: [MPMediaItem] = []
     @State private var visibleSongIDs: [UInt64] = []
-    @State private var visibleSongLetters: [String] = []
+    @State private var visibleSongLetterTargets: [AlphabeticalLetterTarget<UInt64>] = []
     /// In A–Z order: the first song of each letter, and its letter (for the section letters).
     @State private var songSectionStarts: [UInt64: String] = [:]
     @State private var visiblePlaylists: [MusicPlaylist] = []
     @State private var visiblePlaylistIDs: [UInt64] = []
-    @State private var visiblePlaylistLetters: [String] = []
+    @State private var visiblePlaylistLetterTargets: [AlphabeticalLetterTarget<UInt64>] = []
     @State private var visibleArtists: [MusicArtist] = []
     @State private var visibleArtistIDs: [String] = []
-    @State private var visibleArtistLetters: [String] = []
+    @State private var visibleArtistLetterTargets: [AlphabeticalLetterTarget<String>] = []
     @State private var visibleVideos: [LibraryVideo] = []
     @State private var visibleVideoIDs: [UInt64] = []
-    @State private var visibleVideoLetters: [String] = []
+    @State private var visibleVideoLetterTargets: [AlphabeticalLetterTarget<UInt64>] = []
     @State private var visibleMovies: [LibraryVideo] = []
     @State private var visibleMovieIDs: [UInt64] = []
-    @State private var visibleMovieLetters: [String] = []
+    @State private var visibleMovieLetterTargets: [AlphabeticalLetterTarget<UInt64>] = []
     /// Every genre tag among the movies, A–Z, for the filter above the posters.
     @State private var movieGenres: [String] = []
     /// The genre the Movies tab is narrowed to; nil shows every movie.
@@ -330,13 +330,16 @@ struct ContentView: View {
         let songIDs = songs.map(\.persistentID)
         visibleAlbums = albums
         visibleAlbumIDs = albums.map(\.id)
-        visibleAlbumLetters = sort == .alphabetical ? albums.map(\.sectionLetter) : []
+        visibleAlbumLetterTargets = sort == .alphabetical
+            ? AlphabeticalLetterTarget.firstOfEachLetter(ids: visibleAlbumIDs, letters: albums.map(\.sectionLetter))
+            : []
         visibleSongs = songs
         visibleSongIDs = songIDs
-        visibleSongLetters = sort == .alphabetical ? songIDs.map { songInfo[$0]?.sectionLetter ?? "#" } : []
+        let songLetters = sort == .alphabetical ? songIDs.map { songInfo[$0]?.sectionLetter ?? "#" } : []
+        visibleSongLetterTargets = AlphabeticalLetterTarget.firstOfEachLetter(ids: songIDs, letters: songLetters)
         var starts: [UInt64: String] = [:]
         var lastLetter: String?
-        for (id, letter) in zip(songIDs, visibleSongLetters) where letter != lastLetter {
+        for (id, letter) in zip(songIDs, songLetters) where letter != lastLetter {
             starts[id] = letter
             lastLetter = letter
         }
@@ -347,7 +350,9 @@ struct ContentView: View {
         }
         visibleVideos = videos
         visibleVideoIDs = videos.map(\.id)
-        visibleVideoLetters = sort == .alphabetical ? videos.map(\.sectionLetter) : []
+        visibleVideoLetterTargets = sort == .alphabetical
+            ? AlphabeticalLetterTarget.firstOfEachLetter(ids: visibleVideoIDs, letters: videos.map(\.sectionLetter))
+            : []
 
         movieGenres = Array(Set(library.movies.compactMap(\.genre)))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -359,7 +364,9 @@ struct ContentView: View {
         }
         visibleMovies = movies
         visibleMovieIDs = movies.map(\.id)
-        visibleMovieLetters = sort == .alphabetical ? movies.map(\.sectionLetter) : []
+        visibleMovieLetterTargets = sort == .alphabetical
+            ? AlphabeticalLetterTarget.firstOfEachLetter(ids: visibleMovieIDs, letters: movies.map(\.sectionLetter))
+            : []
 
         var artists = LibrarySearch.filterByNameThenSongs(
             library.artists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
@@ -392,14 +399,18 @@ struct ContentView: View {
         }
         visibleArtists = artists
         visibleArtistIDs = artists.map(\.id)
-        visibleArtistLetters = artistSort == .alphabetical ? artists.map(\.sectionLetter) : []
+        visibleArtistLetterTargets = artistSort == .alphabetical
+            ? AlphabeticalLetterTarget.firstOfEachLetter(ids: visibleArtistIDs, letters: artists.map(\.sectionLetter))
+            : []
         let playlists = LibrarySearch.filterByNameThenSongs(
             library.playlists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
         )
         visiblePlaylists = playlists
         visiblePlaylistIDs = playlists.map(\.id)
         // Playlists are always A–Z, so they always have letters.
-        visiblePlaylistLetters = playlists.map(\.sectionLetter)
+        visiblePlaylistLetterTargets = AlphabeticalLetterTarget.firstOfEachLetter(
+            ids: visiblePlaylistIDs, letters: playlists.map(\.sectionLetter)
+        )
     }
 
     /// Most-played first; ties keep their existing (alphabetical) order. Reads each play count once.
@@ -892,7 +903,7 @@ struct ContentView: View {
     private var artistGrid: some View {
         FastScrollContainer(
             itemIDs: visibleArtistIDs,
-            itemLetters: visibleArtistLetters,
+            letterTargets: visibleArtistLetterTargets,
             isAlphabetical: artistSort == .alphabetical,
             itemsPerRow: 3,
             estimatedRowHeight: 168,
@@ -963,7 +974,7 @@ struct ContentView: View {
     private var videoGrid: some View {
         FastScrollContainer(
             itemIDs: visibleVideoIDs,
-            itemLetters: visibleVideoLetters,
+            letterTargets: visibleVideoLetterTargets,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 2,
             estimatedRowHeight: 106,
@@ -1026,7 +1037,7 @@ struct ContentView: View {
     private var movieGrid: some View {
         FastScrollContainer(
             itemIDs: visibleMovieIDs,
-            itemLetters: visibleMovieLetters,
+            letterTargets: visibleMovieLetterTargets,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 3,
             estimatedRowHeight: showMovieTitles ? 236 : 186,
@@ -1118,7 +1129,7 @@ struct ContentView: View {
     private var albumGrid: some View {
         FastScrollContainer(
             itemIDs: visibleAlbumIDs,
-            itemLetters: visibleAlbumLetters,
+            letterTargets: visibleAlbumLetterTargets,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 2,
             estimatedRowHeight: showGridTitles ? 236 : 188,
@@ -1159,7 +1170,7 @@ struct ContentView: View {
     private var songList: some View {
         FastScrollContainer(
             itemIDs: visibleSongIDs,
-            itemLetters: visibleSongLetters,
+            letterTargets: visibleSongLetterTargets,
             isAlphabetical: sort == .alphabetical,
             itemsPerRow: 1,
             estimatedRowHeight: 66,
@@ -1227,7 +1238,7 @@ struct ContentView: View {
             // Same cover grid, A–Z index, and spacing as the Albums tab.
             FastScrollContainer(
                 itemIDs: visiblePlaylistIDs,
-                itemLetters: visiblePlaylistLetters,
+                letterTargets: visiblePlaylistLetterTargets,
                 isAlphabetical: true,
                 itemsPerRow: 2,
                 estimatedRowHeight: showGridTitles ? 236 : 188,
@@ -1588,7 +1599,7 @@ private struct FastScrollContainer<ItemID: Hashable, Content: View>: View {
 
     init(
         itemIDs: [ItemID],
-        itemLetters: [String],
+        letterTargets: [AlphabeticalLetterTarget<ItemID>],
         isAlphabetical: Bool,
         itemsPerRow: Int,
         estimatedRowHeight: CGFloat,
@@ -1601,15 +1612,7 @@ private struct FastScrollContainer<ItemID: Hashable, Content: View>: View {
         self.scrollToTopSignal = scrollToTopSignal
         self.itemIDs = itemIDs
         self.isAlphabetical = isAlphabetical
-        if isAlphabetical {
-            var seen = Set<String>()
-            self.letterTargets = zip(itemLetters, itemIDs).compactMap { letter, itemID in
-                guard seen.insert(letter).inserted else { return nil }
-                return AlphabeticalLetterTarget(letter: letter, itemID: itemID)
-            }
-        } else {
-            self.letterTargets = []
-        }
+        self.letterTargets = isAlphabetical ? letterTargets : []
         self.itemsPerRow = max(itemsPerRow, 1)
         self.estimatedRowHeight = estimatedRowHeight
         self.estimatedPadding = estimatedPadding
@@ -1919,11 +1922,22 @@ private struct ScrollViewAccess: UIViewRepresentable {
     }
 }
 
-private struct AlphabeticalLetterTarget<ItemID: Hashable>: Identifiable {
+/// One letter of the A–Z index and the first item filed under it.
+struct AlphabeticalLetterTarget<ItemID: Hashable>: Identifiable {
     let letter: String
     let itemID: ItemID
 
     var id: String { letter }
+
+    /// The first item for each letter, in list order. Built when a tab's list is rebuilt, not on
+    /// every redraw.
+    static func firstOfEachLetter(ids: [ItemID], letters: [String]) -> [AlphabeticalLetterTarget] {
+        var seen = Set<String>()
+        return zip(letters, ids).compactMap { letter, itemID in
+            guard seen.insert(letter).inserted else { return nil }
+            return AlphabeticalLetterTarget(letter: letter, itemID: itemID)
+        }
+    }
 }
 
 private struct AlphabeticalLetterIndex<ItemID: Hashable>: View {
