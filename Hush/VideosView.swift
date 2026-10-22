@@ -310,6 +310,15 @@ enum VideoPlayback {
         return true
     }
 
+    /// The video has stopped for good (closed full screen, or its floating window closed): put the
+    /// audio session back in music mode, so music played afterwards isn't treated as a film
+    /// soundtrack. Off the main thread, since configuring the session can block.
+    fileprivate static func restoreMusicAudioMode() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        }
+    }
+
     /// Title and artist for the player's own title area.
     private static func metadata(for video: LibraryVideo) -> [AVMetadataItem] {
         func entry(_ identifier: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
@@ -348,6 +357,7 @@ enum VideoPlayback {
                         // Going into Picture in Picture also ends full screen; that video plays on.
                         if VideoPlayback.floating !== playerViewController {
                             playerViewController.player?.pause()
+                            VideoPlayback.restoreMusicAudioMode()
                         }
                         HushAppDelegate.refreshSupportedOrientations()
                     }
@@ -365,6 +375,7 @@ enum VideoPlayback {
                 guard VideoPlayback.floating === playerViewController else { return }
                 if playerViewController.presentingViewController == nil {
                     playerViewController.player?.pause()
+                    VideoPlayback.restoreMusicAudioMode()
                 }
                 VideoPlayback.floating = nil
             }

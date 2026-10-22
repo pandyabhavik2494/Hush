@@ -863,6 +863,9 @@ final class MusicLibraryStore: ObservableObject {
 
     /// Stops the music before a video starts, so the two never play over each other.
     func pauseForVideo() {
+        // The video switches the audio session to movie mode; set it back to music mode the next
+        // time music starts.
+        isAudioSessionCategoryConfigured = false
         guard isPlaying else { return }
         isPlaying = false
         expect(isPlaying: false)
