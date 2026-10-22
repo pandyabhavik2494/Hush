@@ -39,11 +39,11 @@ struct MusicArtist: Identifiable {
     let searchKey: String
     let songSearchKey: String
     let sectionLetter: String
+    /// All their songs in page order (album by album). Kept, not rebuilt on every redraw.
+    let allSongs: [MPMediaItem]
 
-    var songCount: Int { albums.reduce(0) { $0 + $1.songs.count } }
-    /// All their songs in page order (album by album).
-    var allSongs: [MPMediaItem] { albums.flatMap(\.songs) }
-    var totalPlayCount: Int { albums.reduce(0) { total, album in total + album.songs.reduce(0) { $0 + $1.playCount } } }
+    var songCount: Int { allSongs.count }
+    var totalPlayCount: Int { allSongs.reduce(0) { $0 + $1.playCount } }
 }
 
 /// An album as it appears on an artist's page: only the songs credited to that artist.
@@ -300,7 +300,8 @@ private struct LibrarySnapshot: @unchecked Sendable {
                 artworkItem: featured?.artworkItem,
                 searchKey: LibrarySearch.key([name]),
                 songSearchKey: LibrarySearch.songsKey(songs),
-                sectionLetter: LibraryAlphabet.section(for: name)
+                sectionLetter: LibraryAlphabet.section(for: name),
+                allSongs: songs
             )
         }
         artists.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
