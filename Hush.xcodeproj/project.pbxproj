@@ -19,6 +19,8 @@
 		A10000000000000000000009 /* PlaylistViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* PlaylistViews.swift */; };
 		A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* PrivacyInfo.xcprivacy */; };
 		A10000000000000000000011 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* AboutView.swift */; };
+		A10000000000000000000020 /* LibraryTiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* LibraryTiles.swift */; };
+		A10000000000000000000021 /* FastScrollContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* FastScrollContainer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 		B10000000000000000000011 /* PlaylistViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistViews.swift; sourceTree = "<group>"; };
 		B10000000000000000000012 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B10000000000000000000013 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* LibraryTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTiles.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* FastScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastScrollContainer.swift; sourceTree = "<group>"; };
 		B20000000000000000000001 /* Hush.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hush.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -78,6 +82,8 @@
 				B10000000000000000000001 /* HushApp.swift */,
 				B10000000000000000000002 /* LibraryStore.swift */,
 				B10000000000000000000003 /* ContentView.swift */,
+				B10000000000000000000020 /* LibraryTiles.swift */,
+				B10000000000000000000021 /* FastScrollContainer.swift */,
 				B10000000000000000000004 /* AlbumDetailView.swift */,
 				B10000000000000000000005 /* ArtworkView.swift */,
 				B10000000000000000000006 /* PlayerBar.swift */,
@@ -209,6 +215,8 @@
 				A10000000000000000000001 /* HushApp.swift in Sources */,
 				A10000000000000000000002 /* LibraryStore.swift in Sources */,
 				A10000000000000000000003 /* ContentView.swift in Sources */,
+				A10000000000000000000020 /* LibraryTiles.swift in Sources */,
+				A10000000000000000000021 /* FastScrollContainer.swift in Sources */,
 				A10000000000000000000004 /* AlbumDetailView.swift in Sources */,
 				A10000000000000000000005 /* ArtworkView.swift in Sources */,
 				A10000000000000000000006 /* PlayerBar.swift in Sources */,
