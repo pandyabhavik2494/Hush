@@ -263,6 +263,22 @@ struct BarIcon: View {
     }
 }
 
+extension View {
+    /// The playlist and artist pages' name under the picture: large serif, centred.
+    func pageTitleStyle() -> some View {
+        font(.system(size: 29, weight: .regular, design: .serif))
+            .tracking(-0.5)
+            .foregroundStyle(HushStyle.ink)
+            .multilineTextAlignment(.center)
+    }
+
+    /// The quiet "24 songs · 1 hr 32 min" line under a page's name.
+    func pageDetailsStyle() -> some View {
+        font(.system(size: 13, weight: .medium))
+            .foregroundStyle(HushStyle.muted)
+    }
+}
+
 extension ScrollViewProxy {
     /// Scrolls a page's playing song into view once the page has finished opening (a smooth glide,
     /// or a jump with Reduce Motion).
@@ -427,16 +443,12 @@ struct ArtistDetailView: View {
                         .padding(.top, 8)
 
                     Text(artist.name)
-                        .font(.system(size: 29, weight: .regular, design: .serif))
-                        .tracking(-0.5)
-                        .foregroundStyle(HushStyle.ink)
-                        .multilineTextAlignment(.center)
+                        .pageTitleStyle()
                         .padding(.horizontal, 26)
                         .padding(.top, 20)
 
                     Text(details)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(HushStyle.muted)
+                        .pageDetailsStyle()
                         .padding(.top, 7)
 
                     PlayShuffleButtons(

@@ -161,10 +161,7 @@ struct NowPlayingView: View {
                 if let album = currentAlbum {
                     let songAlbumTitle = library.currentItem?.albumTitle ?? ""
                     let albumTitle = songAlbumTitle.isEmpty ? album.title : songAlbumTitle
-                    Text("·")
-                        .font(.system(size: 16))
-                        .foregroundStyle(HushStyle.muted)
-                        .accessibilityHidden(true)
+                    separatorDot
                     Button {
                         onGoTo(.album(album.id))
                     } label: {
@@ -177,10 +174,7 @@ struct NowPlayingView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Go to album \(albumTitle)")
                 } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
-                    Text("·")
-                        .font(.system(size: 16))
-                        .foregroundStyle(HushStyle.muted)
-                        .accessibilityHidden(true)
+                    separatorDot
                     Text(albumTitle)
                         .font(.system(size: 16))
                         .foregroundStyle(HushStyle.muted)
@@ -190,6 +184,14 @@ struct NowPlayingView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The "·" between the artist and the album.
+    private var separatorDot: some View {
+        Text("·")
+            .font(.system(size: 16))
+            .foregroundStyle(HushStyle.muted)
+            .accessibilityHidden(true)
     }
 
     /// Previous, play/pause and next, centred.

@@ -169,17 +169,13 @@ struct PlaylistDetailView: View {
                                 .padding(.top, 8)
 
                             Text(playlist.name)
-                                .font(.system(size: 29, weight: .regular, design: .serif))
-                                .tracking(-0.5)
-                                .foregroundStyle(HushStyle.ink)
-                                .multilineTextAlignment(.center)
+                                .pageTitleStyle()
                                 .frame(maxWidth: .infinity)
                                 .padding(.horizontal, 26)
                                 .padding(.top, 20)
 
                             Text(playlistDetails)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(HushStyle.muted)
+                                .pageDetailsStyle()
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 7)
 
