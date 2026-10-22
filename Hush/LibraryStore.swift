@@ -576,7 +576,10 @@ final class MusicLibraryStore: ObservableObject {
     // Keep playback owned by Hush, so system controls return to Hush and stop with the app.
     private let player = MPMusicPlayerController.applicationQueuePlayer
     private let mediaLibrary = MPMediaLibrary.default()
-    private var libraryChangeObserver: NSObjectProtocol?
+    /// Notification observers (player and library), removed when the store goes away. Written only
+    /// on the main actor; also read by deinit, hence nonisolated.
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+    private var isObservingLibraryChanges = false
     private var libraryRefreshTask: Task<Void, Never>?
     private var playbackStartGeneration = 0
     private var libraryLoadGeneration = 0
@@ -1307,28 +1310,28 @@ final class MusicLibraryStore: ObservableObject {
         player.currentPlaybackTime = target
     }
 
+    deinit {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
     private func observePlayer() {
         player.beginGeneratingPlaybackNotifications()
-        NotificationCenter.default.addObserver(
-            forName: .MPMusicPlayerControllerNowPlayingItemDidChange,
-            object: player,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.syncPlayback() }
-        }
-        NotificationCenter.default.addObserver(
-            forName: .MPMusicPlayerControllerPlaybackStateDidChange,
-            object: player,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.syncPlayback() }
+        for name in [Notification.Name.MPMusicPlayerControllerNowPlayingItemDidChange, .MPMusicPlayerControllerPlaybackStateDidChange] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name,
+                object: player,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.syncPlayback() }
+            })
         }
     }
 
     private func observeLibraryChanges() {
-        guard libraryChangeObserver == nil else { return }
+        guard !isObservingLibraryChanges else { return }
+        isObservingLibraryChanges = true
 
-        libraryChangeObserver = NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: .MPMediaLibraryDidChange,
             object: nil,
             queue: .main
@@ -1336,7 +1339,7 @@ final class MusicLibraryStore: ObservableObject {
             Task { @MainActor in
                 self?.scheduleLibraryRefresh()
             }
-        }
+        })
         mediaLibrary.beginGeneratingLibraryChangeNotifications()
     }
 
