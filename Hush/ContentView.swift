@@ -351,7 +351,6 @@ struct ContentView: View {
 
         movieGenres = Array(Set(library.movies.compactMap(\.genre)))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        if let genre = movieGenre, !movieGenres.contains(genre) { movieGenre = nil }
         var movies = library.movies.filter { movie in
             (movieGenre == nil || movie.genre == movieGenre) && LibrarySearch.matches(movie.searchKey, query: query)
         }
@@ -460,7 +459,15 @@ struct ContentView: View {
             .onChange(of: searchText) { rebuildVisibleLibrary() }
             .onChange(of: movieGenre) { rebuildVisibleLibrary() }
             .onChange(of: sort) { rebuildVisibleLibrary() }
-            .onChange(of: library.libraryRevision) { rebuildVisibleLibrary() }
+            .onChange(of: library.libraryRevision) {
+                // The chosen genre has left the library: clearing it rebuilds the lists (see the
+                // movieGenre onChange), so they aren't rebuilt twice.
+                if let genre = movieGenre, !library.movies.contains(where: { $0.genre == genre }) {
+                    movieGenre = nil
+                } else {
+                    rebuildVisibleLibrary()
+                }
+            }
             .onChange(of: library.favoriteArtistIDs) { rebuildVisibleLibrary() }
             .onChange(of: artistSort) { rebuildVisibleLibrary() }
             .navigationDestination(for: HushRoute.self) { route in
