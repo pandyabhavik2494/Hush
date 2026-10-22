@@ -32,15 +32,6 @@ private enum LibrarySort: String, CaseIterable {
         case .mostPlayed: return "chart.bar.fill"
         }
     }
-
-    var shortLabel: String {
-        switch self {
-        case .favorites: return "FAVORITES"
-        case .mostSongs: return "SONGS"
-        case .alphabetical: return "A–Z"
-        case .mostPlayed: return "PLAYED"
-        }
-    }
 }
 
 /// "Scroll back to the top" for one tab — sent by tapping the tab you're already on.
@@ -82,10 +73,6 @@ enum PlayerArtworkTransitionID {
         "library-song-artwork-\(persistentID)"
     }
 
-    static func albumTrack(_ persistentID: UInt64) -> String {
-        "album-track-artwork-\(persistentID)"
-    }
-
     static func albumPlayButton(_ persistentID: UInt64) -> String {
         "album-detail-play-artwork-\(persistentID)"
     }
@@ -95,8 +82,6 @@ enum PlayerArtworkTransitionID {
     }
 
     static let miniPlayer = "mini-player-artwork"
-
-    static func albumTile(_ id: UInt64) -> String { "album-tile-\(id)" }
 
     // Covers that open a page: the page zooms out of the cover, and back into it on Back.
     static func albumGridTile(_ id: UInt64) -> String { "page-album-grid-\(id)" }
@@ -468,15 +453,10 @@ struct ContentView: View {
             .onAppear(perform: rebuildVisibleLibrary)
             .onChange(of: searchText) { rebuildVisibleLibrary() }
             .onChange(of: movieGenre) { rebuildVisibleLibrary() }
-            .onChange(of: sort) {
-                rebuildVisibleLibrary()
-            }
+            .onChange(of: sort) { rebuildVisibleLibrary() }
             .onChange(of: library.libraryRevision) { rebuildVisibleLibrary() }
             .onChange(of: library.favoriteArtistIDs) { rebuildVisibleLibrary() }
-            .onChange(of: artistSort) {
-                rebuildVisibleLibrary()
-            }
-
+            .onChange(of: artistSort) { rebuildVisibleLibrary() }
             .navigationDestination(for: HushRoute.self) { route in
                 Group {
                     switch route {
@@ -1561,7 +1541,6 @@ private struct SongRow: View {
 
 private struct FastScrollContainer<ItemID: Hashable, Content: View>: View {
     let itemIDs: [ItemID]
-    let itemLetters: [String]
     let isAlphabetical: Bool
     private let letterTargets: [AlphabeticalLetterTarget<ItemID>]
     let itemsPerRow: Int
@@ -1607,7 +1586,6 @@ private struct FastScrollContainer<ItemID: Hashable, Content: View>: View {
     ) {
         self.scrollToTopSignal = scrollToTopSignal
         self.itemIDs = itemIDs
-        self.itemLetters = itemLetters
         self.isAlphabetical = isAlphabetical
         if isAlphabetical {
             var seen = Set<String>()
@@ -2095,7 +2073,7 @@ private struct FastScrollMetrics: Equatable {
 }
 
 private struct FastScrollMetricsPreferenceKey: PreferenceKey {
-    static var defaultValue = FastScrollMetrics()
+    static let defaultValue = FastScrollMetrics()
 
     static func reduce(value: inout FastScrollMetrics, nextValue: () -> FastScrollMetrics) {
         value = nextValue()

@@ -567,11 +567,6 @@ final class MusicLibraryStore: ObservableObject {
         }
     }
 
-    var nowPlayingPlaylist: MusicPlaylist? {
-        guard let nowPlayingPlaylistID else { return nil }
-        return playlists.first { $0.id == nowPlayingPlaylistID }
-    }
-
     var currentPlaybackTime: TimeInterval {
         let time = player.currentPlaybackTime
         return time.isFinite ? max(time, 0) : 0
@@ -1075,11 +1070,9 @@ final class MusicLibraryStore: ObservableObject {
            items[slot.index].persistentID == slot.id {
             return slot.index
         }
-        var best: Int?
-        for index in items.indices where items[index].persistentID == slot.id && !taken.contains(index) {
-            if best == nil || abs(index - slot.index) < abs(best! - slot.index) { best = index }
-        }
-        return best
+        return items.indices
+            .filter { items[$0].persistentID == slot.id && !taken.contains($0) }
+            .min { abs($0 - slot.index) < abs($1 - slot.index) }
     }
 
     /// Removes songs. Everything is looked up in the single snapshot first, then removed, so the
