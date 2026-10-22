@@ -294,6 +294,8 @@ struct ContentView: View {
     /// In A–Z order: the first song of each letter, and its letter (for the section letters).
     @State private var songSectionStarts: [UInt64: String] = [:]
     @State private var visiblePlaylists: [MusicPlaylist] = []
+    @State private var visiblePlaylistIDs: [UInt64] = []
+    @State private var visiblePlaylistLetters: [String] = []
     @State private var visibleArtists: [MusicArtist] = []
     @State private var visibleArtistIDs: [String] = []
     @State private var visibleArtistLetters: [String] = []
@@ -392,9 +394,13 @@ struct ContentView: View {
         visibleArtists = artists
         visibleArtistIDs = artists.map(\.id)
         visibleArtistLetters = artistSort == .alphabetical ? artists.map(\.sectionLetter) : []
-        visiblePlaylists = LibrarySearch.filterByNameThenSongs(
+        let playlists = LibrarySearch.filterByNameThenSongs(
             library.playlists, query: query, nameKey: \.searchKey, songsKey: \.songSearchKey
         )
+        visiblePlaylists = playlists
+        visiblePlaylistIDs = playlists.map(\.id)
+        // Playlists are always A–Z, so they always have letters.
+        visiblePlaylistLetters = playlists.map(\.sectionLetter)
     }
 
     /// Most-played first; ties keep their existing (alphabetical) order. Reads each play count once.
@@ -1213,8 +1219,8 @@ struct ContentView: View {
         } else {
             // Same cover grid, A–Z index, and spacing as the Albums tab.
             FastScrollContainer(
-                itemIDs: playlists.map(\.id),
-                itemLetters: playlists.map(\.sectionLetter),
+                itemIDs: visiblePlaylistIDs,
+                itemLetters: visiblePlaylistLetters,
                 isAlphabetical: true,
                 itemsPerRow: 2,
                 estimatedRowHeight: showGridTitles ? 236 : 188,
