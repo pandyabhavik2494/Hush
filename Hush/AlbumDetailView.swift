@@ -322,20 +322,53 @@ private struct PlainPageHeader<MenuContent: View>: ViewModifier {
                 .padding(.horizontal, 8)
                 .frame(height: HushStyle.tapTarget)
                 .background(HushStyle.paper)
+                .background(EdgeSwipeBack().frame(width: 0, height: 0))
             }
     }
 }
 
-/// The pages hide the system bar for their plain header; this keeps the swipe from the left edge
-/// going back.
-extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
+/// The pages hide the system bar for their plain header, which also switches off UIKit's swipe
+/// from the left edge to go back. Placed in that header, this finds the navigation controller
+/// showing the page and lets the swipe start again whenever there's a page to go back to. Only the
+/// navigation stack holding these pages is touched.
+private struct EdgeSwipeBack: UIViewRepresentable {
+    func makeUIView(context: Context) -> HookView {
+        let view = HookView()
+        view.isUserInteractionEnabled = false
+        return view
     }
 
-    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        viewControllers.count > 1
+    func updateUIView(_ view: HookView, context: Context) {}
+
+    final class HookView: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil,
+                  let gesture = EdgeSwipeBackDelegate.navigationController(above: self)?.interactivePopGestureRecognizer,
+                  gesture.delegate !== EdgeSwipeBackDelegate.shared else { return }
+            gesture.delegate = EdgeSwipeBackDelegate.shared
+        }
+    }
+}
+
+@MainActor
+private final class EdgeSwipeBackDelegate: NSObject, UIGestureRecognizerDelegate {
+    static let shared = EdgeSwipeBackDelegate()
+
+    /// The swipe starts only when there's a page to go back to (never on the library itself).
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let view = gestureRecognizer.view else { return false }
+        return (Self.navigationController(above: view)?.viewControllers.count ?? 0) > 1
+    }
+
+    /// The nearest navigation controller up the responder chain from a view.
+    static func navigationController(above view: UIView) -> UINavigationController? {
+        var responder: UIResponder? = view
+        while let current = responder {
+            if let navigationController = current as? UINavigationController { return navigationController }
+            responder = current.next
+        }
+        return nil
     }
 }
 
