@@ -92,11 +92,7 @@ struct NowPlayingView: View {
             Button {
                 onMinimize()
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(HushStyle.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                BarIcon(systemName: "chevron.down")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back to library")
@@ -106,17 +102,13 @@ struct NowPlayingView: View {
             Button {
                 showingQueue = true
             } label: {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(HushStyle.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                BarIcon(systemName: "list.bullet", size: 18)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Up Next")
             .accessibilityHint("Shows the queue so you can reorder, remove or add songs")
         }
-        .frame(height: 44)
+        .frame(height: HushStyle.tapTarget)
     }
 
     /// The artist name leads to their page (a short menu when several are credited), like Apple Music.
@@ -632,7 +624,7 @@ private struct QueueRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ArtworkView(item: item, cornerRadius: 8, size: CGSize(width: 120, height: 120))
+            ArtworkView(item: item, cornerRadius: 8, size: HushStyle.smallArtworkSize)
                 .frame(width: 46, height: 46)
                 .overlay(alignment: .bottomTrailing) {
                     if isCurrent {
@@ -758,16 +750,7 @@ private struct QueueMenuModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.contextMenu {
-            Button {
-                library.playNext(items())
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            Button {
-                library.addToQueue(items())
-            } label: {
-                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
+            QueueActionButtons(library: library, items: items)
         }
     }
 }

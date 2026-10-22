@@ -458,70 +458,9 @@ struct ContentView: View {
             .onChange(of: library.favoriteArtistIDs) { rebuildVisibleLibrary() }
             .onChange(of: artistSort) { rebuildVisibleLibrary() }
             .navigationDestination(for: HushRoute.self) { route in
-                Group {
-                    switch route {
-                    case .album(let albumID):
-                        if let album = library.albums.first(where: { $0.id == albumID }) {
-                            AlbumDetailView(
-                                album: album,
-                                artworkNamespace: artworkNamespace,
-                                onPlay: { item, queue, transitionID in
-                                    library.play(item, from: queue, source: .album(album.id))
-                                    openPlayer(from: transitionID)
-                                },
-                                onShuffle: {
-                                    library.playShuffled(album.items, source: .album(album.id))
-                                    if let first = album.items.first {
-                                        openPlayer(from: PlayerArtworkTransitionID.albumPlayButton(first.persistentID))
-                                    }
-                                },
-                                onOpenArtist: { artistID in
-                                    show(.artist(artistID))
-                                }
-                            )
-                        }
-                    case .artist(let artistID):
-                        if let artist = library.artists.first(where: { $0.id == artistID }) {
-                            ArtistDetailView(
-                                artist: artist,
-                                artworkNamespace: artworkNamespace,
-                                onPlay: { item, queue, transitionID in
-                                    library.play(item, from: queue, source: .artist(artistID))
-                                    openPlayer(from: transitionID)
-                                },
-                                onShuffle: {
-                                    library.playShuffled(artist.allSongs, source: .artist(artistID))
-                                    openPlayer(from: PlayerArtworkTransitionID.artistHeader(artistID))
-                                },
-                                onOpenAlbum: { albumID in
-                                    // Back returns to this artist; an album already open further back
-                                    // is returned to rather than stacked twice.
-                                    show(
-                                        .album(albumID),
-                                        zoomingFrom: PlayerArtworkTransitionID.artistPageAlbum(artistID: artistID, albumID: albumID)
-                                    )
-                                }
-                            )
-                        }
-                    case .playlist(let playlistID):
-                        if let playlist = library.playlists.first(where: { $0.id == playlistID }) {
-                            PlaylistDetailView(
-                                playlist: playlist,
-                                artworkNamespace: artworkNamespace,
-                                onPlay: { item, queue, transitionID in
-                                    library.play(item, from: queue, playlistID: playlistID)
-                                    openPlayer(from: transitionID)
-                                },
-                                onShuffle: {
-                                    library.playShuffled(playlist.items, playlistID: playlistID)
-                                    openPlayer(from: PlayerArtworkTransitionID.playlistTile(playlistID))
-                                }
-                            )
-                        }
-                    }
-                }
-                // Opened from a cover: zoom out of it (and back into it on Back). Reduce Motion: slide.
-                .zoomTransition(from: reduceMotion ? nil : pageZoomSources[route], in: artworkNamespace)
+                page(for: route)
+                    // Opened from a cover: zoom out of it (and back into it on Back). Reduce Motion: slide.
+                    .zoomTransition(from: reduceMotion ? nil : pageZoomSources[route], in: artworkNamespace)
             }
         }
         .environment(\.miniPlayerTop, miniPlayerTop)
@@ -590,6 +529,71 @@ struct ContentView: View {
         .tint(HushStyle.accent)
     }
 
+    /// The album, artist or playlist page a route opens (nothing if it's left the library).
+    @ViewBuilder
+    private func page(for route: HushRoute) -> some View {
+        switch route {
+        case .album(let albumID):
+            if let album = library.albums.first(where: { $0.id == albumID }) {
+                AlbumDetailView(
+                    album: album,
+                    artworkNamespace: artworkNamespace,
+                    onPlay: { item, queue, transitionID in
+                        library.play(item, from: queue, source: .album(album.id))
+                        openPlayer(from: transitionID)
+                    },
+                    onShuffle: {
+                        library.playShuffled(album.items, source: .album(album.id))
+                        if let first = album.items.first {
+                            openPlayer(from: PlayerArtworkTransitionID.albumPlayButton(first.persistentID))
+                        }
+                    },
+                    onOpenArtist: { artistID in
+                        show(.artist(artistID))
+                    }
+                )
+            }
+        case .artist(let artistID):
+            if let artist = library.artists.first(where: { $0.id == artistID }) {
+                ArtistDetailView(
+                    artist: artist,
+                    artworkNamespace: artworkNamespace,
+                    onPlay: { item, queue, transitionID in
+                        library.play(item, from: queue, source: .artist(artistID))
+                        openPlayer(from: transitionID)
+                    },
+                    onShuffle: {
+                        library.playShuffled(artist.allSongs, source: .artist(artistID))
+                        openPlayer(from: PlayerArtworkTransitionID.artistHeader(artistID))
+                    },
+                    onOpenAlbum: { albumID in
+                        // Back returns to this artist; an album already open further back
+                        // is returned to rather than stacked twice.
+                        show(
+                            .album(albumID),
+                            zoomingFrom: PlayerArtworkTransitionID.artistPageAlbum(artistID: artistID, albumID: albumID)
+                        )
+                    }
+                )
+            }
+        case .playlist(let playlistID):
+            if let playlist = library.playlists.first(where: { $0.id == playlistID }) {
+                PlaylistDetailView(
+                    playlist: playlist,
+                    artworkNamespace: artworkNamespace,
+                    onPlay: { item, queue, transitionID in
+                        library.play(item, from: queue, playlistID: playlistID)
+                        openPlayer(from: transitionID)
+                    },
+                    onShuffle: {
+                        library.playShuffled(playlist.items, playlistID: playlistID)
+                        openPlayer(from: PlayerArtworkTransitionID.playlistTile(playlistID))
+                    }
+                )
+            }
+        }
+    }
+
     /// Opens a page on top of where you are, so Back returns there. If that page is already open
     /// somewhere in the stack, goes back to it instead of opening it twice.
     /// `sourceID`: the cover it was opened from, if any — the page then zooms out of that cover.
@@ -630,11 +634,7 @@ struct ContentView: View {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { isSearching = true }
             } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(HushStyle.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                BarIcon(systemName: "magnifyingglass", weight: .regular)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Search")
@@ -678,11 +678,7 @@ struct ContentView: View {
                 }
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 19, weight: .regular))
-                .foregroundStyle(HushStyle.ink)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            BarIcon(systemName: "line.3.horizontal.decrease", weight: .regular)
         }
         .accessibilityLabel("Sort and view options")
     }
@@ -859,27 +855,18 @@ struct ContentView: View {
 
     /// Favorites view with no favorites yet: how to add some, and a way to see everyone.
     private var favoritesEmptyMessage: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "heart")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(HushStyle.accent.opacity(0.85))
-            Text("No favorite artists yet")
-                .font(.system(size: 21, weight: .regular, design: .serif))
-                .foregroundStyle(HushStyle.ink)
-            Text("Open an artist and tap the heart, or press and hold their picture.")
-                .font(.system(size: 14))
-                .foregroundStyle(HushStyle.muted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
+        EmptyStateMessage(
+            symbol: "heart",
+            symbolSize: 30,
+            title: "No favorite artists yet",
+            message: "Open an artist and tap the heart, or press and hold their picture.",
+            messageWidth: 280
+        ) {
             Button {
                 artistSort = .mostSongs
             } label: {
                 Text("Show All Artists")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(HushStyle.paper)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 11)
-                    .background(HushStyle.accent, in: Capsule())
+                    .accentCapsule()
             }
             .buttonStyle(PopButtonStyle())
             .padding(.top, 4)
@@ -921,7 +908,7 @@ struct ContentView: View {
                         )
                     }
                     .buttonStyle(TilePressStyle())
-                    .contextMenu { artistMenu(artist, isFavorite: isFavorite) }
+                    .contextMenu { artistMenu(artist) }
                     .id(artist.id)
                 }
             }
@@ -933,26 +920,9 @@ struct ContentView: View {
 
     /// Long-press menu on an artist: favorite, plus the usual Play Next / Add to Queue.
     @ViewBuilder
-    private func artistMenu(_ artist: MusicArtist, isFavorite: Bool) -> some View {
-        Button {
-            library.toggleFavorite(artistID: artist.id)
-        } label: {
-            if isFavorite {
-                Label("Remove from Favorites", systemImage: "heart.slash")
-            } else {
-                Label("Add to Favorites", systemImage: "heart")
-            }
-        }
-        Button {
-            library.playNext(artist.allSongs)
-        } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-        }
-        Button {
-            library.addToQueue(artist.allSongs)
-        } label: {
-            Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-        }
+    private func artistMenu(_ artist: MusicArtist) -> some View {
+        FavoriteArtistButton(library: library, artistID: artist.id)
+        QueueActionButtons(library: library) { artist.allSongs }
     }
 
     /// Music videos from the Music app. Tap one to watch it full screen.
@@ -960,21 +930,13 @@ struct ContentView: View {
     private var videosPage: some View {
         if visibleVideos.isEmpty {
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 12) {
-                    Image(systemName: searchText.isEmpty ? "play.rectangle" : "magnifyingglass")
-                        .font(.system(size: 31, weight: .light))
-                        .foregroundStyle(HushStyle.accent.opacity(0.85))
-                    Text(searchText.isEmpty ? "No videos yet" : "No videos found")
-                        .font(.system(size: 21, weight: .regular, design: .serif))
-                        .foregroundStyle(HushStyle.ink)
-                    Text(searchText.isEmpty
-                         ? "Music videos in the Music app appear here once they're on this iPhone. Pull down to check again."
-                         : "Try another video name.")
-                        .font(.system(size: 14))
-                        .foregroundStyle(HushStyle.muted)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 290)
-                }
+                EmptyStateMessage(
+                    symbol: searchText.isEmpty ? "play.rectangle" : "magnifyingglass",
+                    title: searchText.isEmpty ? "No videos yet" : "No videos found",
+                    message: searchText.isEmpty
+                        ? "Music videos in the Music app appear here once they're on this iPhone. Pull down to check again."
+                        : "Try another video name."
+                )
                 .padding(28)
                 .frame(maxWidth: .infinity, minHeight: 250)
             }
@@ -1029,22 +991,14 @@ struct ContentView: View {
                         genreFilter
                             .padding(.top, 20)
                     }
-                    VStack(spacing: 12) {
-                        let filtered = !searchText.isEmpty || movieGenre != nil
-                        Image(systemName: filtered ? "magnifyingglass" : "film")
-                            .font(.system(size: 31, weight: .light))
-                            .foregroundStyle(HushStyle.accent.opacity(0.85))
-                        Text(filtered ? "No movies found" : "No movies yet")
-                            .font(.system(size: 21, weight: .regular, design: .serif))
-                            .foregroundStyle(HushStyle.ink)
-                        Text(filtered
-                             ? "Try another name or genre."
-                             : "Movies synced to this iPhone from the TV app on your Mac appear here. Pull down to check again.")
-                            .font(.system(size: 14))
-                            .foregroundStyle(HushStyle.muted)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 290)
-                    }
+                    let filtered = !searchText.isEmpty || movieGenre != nil
+                    EmptyStateMessage(
+                        symbol: filtered ? "magnifyingglass" : "film",
+                        title: filtered ? "No movies found" : "No movies yet",
+                        message: filtered
+                            ? "Try another name or genre."
+                            : "Movies synced to this iPhone from the TV app on your Mac appear here. Pull down to check again."
+                    )
                     .padding(28)
                     .frame(maxWidth: .infinity, minHeight: 250)
                 }
@@ -1243,20 +1197,14 @@ struct ContentView: View {
         let playlists = visiblePlaylists
         if playlists.isEmpty {
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 12) {
-                    Image(systemName: searchText.isEmpty ? "music.note.list" : "magnifyingglass")
-                        .font(.system(size: 31, weight: .light))
-                        .foregroundStyle(HushStyle.accent.opacity(0.85))
-                    Text(searchText.isEmpty ? "No playlists yet" : "No playlists found")
-                        .font(.system(size: 21, weight: .regular, design: .serif))
-                        .foregroundStyle(HushStyle.ink)
-                    Text(searchText.isEmpty
-                         ? "Make playlists in the Music app, then pull down here to bring them in."
-                         : "Try another playlist or song name.")
-                        .font(.system(size: 14))
-                        .foregroundStyle(HushStyle.muted)
-                        .multilineTextAlignment(.center)
-                }
+                EmptyStateMessage(
+                    symbol: searchText.isEmpty ? "music.note.list" : "magnifyingglass",
+                    title: searchText.isEmpty ? "No playlists yet" : "No playlists found",
+                    message: searchText.isEmpty
+                        ? "Make playlists in the Music app, then pull down here to bring them in."
+                        : "Try another playlist or song name.",
+                    messageWidth: nil
+                )
                 .padding(28)
                 .frame(maxWidth: .infinity, minHeight: 250)
             }
@@ -1327,11 +1275,7 @@ struct ContentView: View {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
             }
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(HushStyle.paper)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 11)
-            .background(HushStyle.accent, in: Capsule())
+            .accentCapsule()
             .padding(.top, 4)
         }
         .padding(30)
@@ -1340,35 +1284,92 @@ struct ContentView: View {
 
     private var emptyLibraryMessage: some View {
         let isLibraryEmpty = searchText.isEmpty && library.songs.isEmpty
-        return VStack(spacing: 12) {
-            Image(systemName: searchText.isEmpty ? "waveform" : "magnifyingglass")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(HushStyle.accent.opacity(0.8))
-            Text(searchText.isEmpty ? "A quiet start" : "Nothing found")
-                .font(.system(size: 21, weight: .regular, design: .serif))
-                .foregroundStyle(HushStyle.ink)
-            Text(isLibraryEmpty
-                 ? "Songs you buy or add in the Music app appear here once they're downloaded to this iPhone."
-                 : searchText.isEmpty ? "Nothing here yet." : "Try another song, album, or artist.")
-                .font(.system(size: 14))
-                .foregroundStyle(HushStyle.muted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 290)
+        return EmptyStateMessage(
+            symbol: searchText.isEmpty ? "waveform" : "magnifyingglass",
+            symbolSize: 32,
+            symbolOpacity: 0.8,
+            title: searchText.isEmpty ? "A quiet start" : "Nothing found",
+            message: isLibraryEmpty
+                ? "Songs you buy or add in the Music app appear here once they're downloaded to this iPhone."
+                : searchText.isEmpty ? "Nothing here yet." : "Try another song, album, or artist."
+        ) {
             if isLibraryEmpty {
                 Button("Open Music") {
                     guard let url = URL(string: "music://") else { return }
                     UIApplication.shared.open(url)
                 }
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(HushStyle.paper)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 11)
-                .background(HushStyle.accent, in: Capsule())
+                .accentCapsule()
                 .padding(.top, 4)
             }
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A quiet note in place of an empty list: a light symbol, a line in the serif, a short
+/// explanation and, sometimes, a button.
+private struct EmptyStateMessage<Action: View>: View {
+    let symbol: String
+    var symbolSize: CGFloat = 31
+    var symbolOpacity: Double = 0.85
+    let title: String
+    let message: String
+    /// Wraps the explanation at this width; nil lets it run the full width.
+    var messageWidth: CGFloat? = 290
+    let action: Action
+
+    init(
+        symbol: String,
+        symbolSize: CGFloat = 31,
+        symbolOpacity: Double = 0.85,
+        title: String,
+        message: String,
+        messageWidth: CGFloat? = 290,
+        @ViewBuilder action: () -> Action = { EmptyView() }
+    ) {
+        self.symbol = symbol
+        self.symbolSize = symbolSize
+        self.symbolOpacity = symbolOpacity
+        self.title = title
+        self.message = message
+        self.messageWidth = messageWidth
+        self.action = action()
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: symbolSize, weight: .light))
+                .foregroundStyle(HushStyle.accent.opacity(symbolOpacity))
+            Text(title)
+                .font(.system(size: 21, weight: .regular, design: .serif))
+                .foregroundStyle(HushStyle.ink)
+            if let messageWidth {
+                messageText.frame(maxWidth: messageWidth)
+            } else {
+                messageText
+            }
+            action
+        }
+    }
+
+    private var messageText: some View {
+        Text(message)
+            .font(.system(size: 14))
+            .foregroundStyle(HushStyle.muted)
+            .multilineTextAlignment(.center)
+    }
+}
+
+private extension View {
+    /// The small filled accent capsule used for the one button in an empty or access message.
+    func accentCapsule() -> some View {
+        font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(HushStyle.paper)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+            .background(HushStyle.accent, in: Capsule())
     }
 }
 
@@ -1390,14 +1391,14 @@ private struct PlaylistTile: View {
                             items: playlist.artworkItems,
                             size: geometry.size.width,
                             artwork: artwork,
-                            cornerRadius: 10
+                            cornerRadius: HushStyle.tileCornerRadius
                         )
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if isPlaying { NowPlayingBadge(size: 24).padding(8) }
                 }
-                .pageZoomSource(PlayerArtworkTransitionID.playlistGridTile(playlist.id), in: zoomNamespace, cornerRadius: 10)
+                .pageZoomSource(PlayerArtworkTransitionID.playlistGridTile(playlist.id), in: zoomNamespace, cornerRadius: HushStyle.tileCornerRadius)
             if showsTitle {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(playlist.name)
@@ -1469,11 +1470,11 @@ private struct AlbumTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ArtworkView(item: album.artworkItem, cornerRadius: 10)
+            ArtworkView(item: album.artworkItem, cornerRadius: HushStyle.tileCornerRadius)
                 .overlay(alignment: .bottomTrailing) {
                     if isPlaying { NowPlayingBadge(size: 24).padding(8) }
                 }
-                .pageZoomSource(PlayerArtworkTransitionID.albumGridTile(album.id), in: zoomNamespace, cornerRadius: 10)
+                .pageZoomSource(PlayerArtworkTransitionID.albumGridTile(album.id), in: zoomNamespace, cornerRadius: HushStyle.tileCornerRadius)
             if showsTitle {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(album.title)
@@ -1525,7 +1526,7 @@ private struct SongRow: View {
 
     @ViewBuilder
     private var songArtwork: some View {
-        let artwork = ArtworkView(item: item, cornerRadius: 6, size: CGSize(width: 120, height: 120))
+        let artwork = ArtworkView(item: item, cornerRadius: 6, size: HushStyle.smallArtworkSize)
             .frame(width: 48, height: 48)
 
         if #available(iOS 18.0, *) {

@@ -34,7 +34,7 @@ struct PlayerBar: View {
                 tap(onOpen)
             } label: {
                 HStack(spacing: 12) {
-                    ArtworkView(item: library.currentItem, cornerRadius: 7, size: CGSize(width: 120, height: 120))
+                    ArtworkView(item: library.currentItem, cornerRadius: 7, size: HushStyle.smallArtworkSize)
                         .frame(width: 44, height: 44)
                         .zoomSource(PlayerArtworkTransitionID.miniPlayer, in: artworkNamespace)
                     VStack(alignment: .leading, spacing: 2) {

@@ -85,7 +85,7 @@ struct PlaylistArtwork: View {
     let size: CGFloat
     /// The playlist's own cover from the Music app; when nil, a mosaic of album covers is shown.
     var artwork: Artwork? = nil
-    var cornerRadius: CGFloat = 10
+    var cornerRadius: CGFloat = HushStyle.tileCornerRadius
 
     private var shownItems: [MPMediaItem] { Array(items.prefix(4)) }
     private var safeSize: CGFloat { size.isFinite ? max(size, 0) : 0 }
@@ -112,7 +112,7 @@ struct PlaylistArtwork: View {
                     spacing: 2
                 ) {
                     ForEach(Array(shownItems.enumerated()), id: \.offset) { _, item in
-                        ArtworkView(item: item, cornerRadius: 3, size: CGSize(width: 120, height: 120))
+                        ArtworkView(item: item, cornerRadius: 3, size: HushStyle.smallArtworkSize)
                             .frame(width: cellSize, height: cellSize)
                     }
                 }
@@ -222,10 +222,7 @@ struct PlaylistDetailView: View {
                                         .id(index)
 
                                         if index < songs.count - 1 {
-                                            Rectangle()
-                                                .fill(HushStyle.line.opacity(0.55))
-                                                .frame(height: 0.6)
-                                                .padding(.leading, 62)
+                                            TrackDivider(leadingInset: 62)
                                         }
                                     }
                                 }
@@ -242,16 +239,7 @@ struct PlaylistDetailView: View {
             }
         }
         .plainPageHeader {
-            Button {
-                library.playNext(songs)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            Button {
-                library.addToQueue(songs)
-            } label: {
-                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
+            QueueActionButtons(library: library) { songs }
         }
         .tint(HushStyle.accent)
     }
@@ -264,13 +252,7 @@ struct PlaylistDetailView: View {
         guard let currentID = library.currentItem?.persistentID,
               let index = songs.firstIndex(where: { $0.persistentID == currentID }),
               index >= 4 else { return }
-        let animation: Animation? = reduceMotion ? nil : .smooth(duration: 0.6)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            withAnimation(animation) {
-                proxy.scrollTo(index, anchor: .center)
-            }
-        }
+        proxy.revealAfterPageOpens(index, reduceMotion: reduceMotion)
     }
 
     @ViewBuilder
@@ -280,7 +262,7 @@ struct PlaylistDetailView: View {
             TrackNumberLabel(number: number, isCurrent: isCurrent)
                 .frame(width: 26, alignment: .leading)
 
-            let artwork = ArtworkView(item: item, cornerRadius: 8, size: CGSize(width: 120, height: 120))
+            let artwork = ArtworkView(item: item, cornerRadius: 8, size: HushStyle.smallArtworkSize)
                 .frame(width: 48, height: 48)
             if #available(iOS 18.0, *) {
                 artwork.matchedTransitionSource(

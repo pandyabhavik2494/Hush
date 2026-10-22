@@ -29,6 +29,13 @@ enum HushStyle {
     static let iconOff = Color(red: 0.420, green: 0.412, blue: 0.392)
     /// Outlined buttons (Shuffle).
     static let outline = Color(red: 0.227, green: 0.224, blue: 0.212)
+
+    /// The smallest comfortable touch target (Apple's 44 pt): bar buttons and the bars themselves.
+    static let tapTarget: CGFloat = 44
+    /// What small covers (rows, the mini player, mosaic cells) are decoded at — sharp up to ~48 pt.
+    static let smallArtworkSize = CGSize(width: 120, height: 120)
+    /// Corner radius of the album, playlist, video and movie tiles.
+    static let tileCornerRadius: CGFloat = 10
     #endif
     static let line = Color(red: 0.180, green: 0.173, blue: 0.155)
 

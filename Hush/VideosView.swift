@@ -58,9 +58,9 @@ struct VideoTile: View {
                         .padding(6)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: HushStyle.tileCornerRadius, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: HushStyle.tileCornerRadius, style: .continuous))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(video.artist.map { "\(video.title), \($0)" } ?? video.title)
             .accessibilityHint(video.assetURL == nil ? "Not downloaded to this iPhone" : "Plays the video")
@@ -163,7 +163,7 @@ struct MoviePoster: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: HushStyle.tileCornerRadius, style: .continuous))
             .animation(.easeOut(duration: 0.2), value: image != nil)
             .task(id: movie.id) {
                 guard image == nil else { return }
@@ -204,7 +204,7 @@ struct VideoThumbnail: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: HushStyle.tileCornerRadius, style: .continuous))
             .animation(.easeOut(duration: 0.2), value: image != nil)
             .task(id: video.id) {
                 guard image == nil else { return }

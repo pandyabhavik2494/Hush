@@ -85,16 +85,7 @@ struct AlbumDetailView: View {
             }
         }
         .plainPageHeader {
-            Button {
-                library.playNext(album.items)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            Button {
-                library.addToQueue(album.items)
-            } label: {
-                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
+            QueueActionButtons(library: library) { album.items }
         }
     }
 
@@ -106,13 +97,7 @@ struct AlbumDetailView: View {
         guard let currentID = library.currentItem?.persistentID,
               let index = album.items.firstIndex(where: { $0.persistentID == currentID }),
               index >= 4 else { return }
-        let animation: Animation? = reduceMotion ? nil : .smooth(duration: 0.6)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            withAnimation(animation) {
-                proxy.scrollTo(currentID, anchor: .center)
-            }
-        }
+        proxy.revealAfterPageOpens(currentID, reduceMotion: reduceMotion)
     }
 
     /// The album artist, which leads to their page; several artists → a short menu.
@@ -213,6 +198,85 @@ struct PlayShuffleButtons: View {
     }
 }
 
+/// Play Next and Add to Queue, for the long-press menus and the pages' "more" menus. `items` is
+/// only read when one is chosen.
+struct QueueActionButtons: View {
+    let library: MusicLibraryStore
+    let items: () -> [MPMediaItem]
+
+    var body: some View {
+        Button {
+            library.playNext(items())
+        } label: {
+            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+        }
+        Button {
+            library.addToQueue(items())
+        } label: {
+            Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+        }
+    }
+}
+
+/// Add to / Remove from Favorites for an artist (the Artists tab opens on favorites).
+struct FavoriteArtistButton: View {
+    let library: MusicLibraryStore
+    let artistID: String
+
+    var body: some View {
+        Button {
+            library.toggleFavorite(artistID: artistID)
+        } label: {
+            if library.isFavorite(artistID: artistID) {
+                Label("Remove from Favorites", systemImage: "heart.slash")
+            } else {
+                Label("Add to Favorites", systemImage: "heart")
+            }
+        }
+    }
+}
+
+/// The hairline between track rows on the playlist and artist pages, starting at the title.
+struct TrackDivider: View {
+    let leadingInset: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(HushStyle.line.opacity(0.55))
+            .frame(height: 0.6)
+            .padding(.leading, leadingInset)
+    }
+}
+
+/// A plain icon for a bar button: ink-coloured, in a full 44 pt square you can hit anywhere.
+struct BarIcon: View {
+    let systemName: String
+    var size: CGFloat = 19
+    var weight: Font.Weight = .medium
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: weight))
+            .foregroundStyle(HushStyle.ink)
+            .frame(width: HushStyle.tapTarget, height: HushStyle.tapTarget)
+            .contentShape(Rectangle())
+    }
+}
+
+extension ScrollViewProxy {
+    /// Scrolls a page's playing song into view once the page has finished opening (a smooth glide,
+    /// or a jump with Reduce Motion).
+    func revealAfterPageOpens<ID: Hashable>(_ id: ID, reduceMotion: Bool) {
+        let animation: Animation? = reduceMotion ? nil : .smooth(duration: 0.6)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            withAnimation(animation) {
+                scrollTo(id, anchor: .center)
+            }
+        }
+    }
+}
+
 /// A plain black bar at the top of a page: back on the left, a "more" menu on the right. The page
 /// scrolls under it. Replaces the system bar (and its glass back button).
 private struct PlainPageHeader<MenuContent: View>: ViewModifier {
@@ -227,11 +291,7 @@ private struct PlainPageHeader<MenuContent: View>: ViewModifier {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(HushStyle.ink)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        BarIcon(systemName: "chevron.left", size: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Back")
@@ -239,16 +299,12 @@ private struct PlainPageHeader<MenuContent: View>: ViewModifier {
                     Menu {
                         menu
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 19, weight: .medium))
-                            .foregroundStyle(HushStyle.ink)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        BarIcon(systemName: "ellipsis")
                     }
                     .accessibilityLabel("More")
                 }
                 .padding(.horizontal, 8)
-                .frame(height: 44)
+                .frame(height: HushStyle.tapTarget)
                 .background(HushStyle.paper)
             }
     }
@@ -399,10 +455,7 @@ struct ArtistDetailView: View {
                             ForEach(Array(album.songs.enumerated()), id: \.element.persistentID) { index, item in
                                 songRow(item, fallbackNumber: index + 1, queue: allSongs)
                                 if index < album.songs.count - 1 {
-                                    Rectangle()
-                                        .fill(HushStyle.line.opacity(0.55))
-                                        .frame(height: 0.6)
-                                        .padding(.leading, 36)
+                                    TrackDivider(leadingInset: 36)
                                 }
                             }
                         }
@@ -415,27 +468,8 @@ struct ArtistDetailView: View {
             .miniPlayerClearance()
         }
         .plainPageHeader {
-            // Favorites come first on the Artists tab.
-            let isFavorite = library.isFavorite(artistID: artist.id)
-            Button {
-                library.toggleFavorite(artistID: artist.id)
-            } label: {
-                if isFavorite {
-                    Label("Remove from Favorites", systemImage: "heart.slash")
-                } else {
-                    Label("Add to Favorites", systemImage: "heart")
-                }
-            }
-            Button {
-                library.playNext(allSongs)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            Button {
-                library.addToQueue(allSongs)
-            } label: {
-                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
+            FavoriteArtistButton(library: library, artistID: artist.id)
+            QueueActionButtons(library: library) { allSongs }
         }
     }
 
