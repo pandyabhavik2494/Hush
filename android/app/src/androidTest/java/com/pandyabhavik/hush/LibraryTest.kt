@@ -152,10 +152,8 @@ class LibraryTest : HushTestBase() {
         if (titlesOn) waitDisplayed(button("Hush Test Album")) else waitNotDisplayed(button("Hush Test Album"))
 
         if (wide) {
-            val before = model.library
             tap(desc("Options"))
-            tap(button("Refresh Library"))
-            waitUntil("the library to be read again", 20_000) { model.library !== before && !model.refreshing }
+            assertRefreshReadsTheLibrary { tap(button("Refresh Library")) }
 
             tap(desc("Options"))
             tap(button("About Hush"))
@@ -196,10 +194,8 @@ class LibraryTest : HushTestBase() {
         waitDisplayed(button("Quiet Players"))
 
         if (!wide) {
-            val before = model.library
             tap(desc("Options"))
-            tap(button("Look for Missing Photos"))
-            waitUntil("the library to be read again", 20_000) { model.library !== before && !model.refreshing }
+            assertRefreshReadsTheLibrary { tap(button("Look for Missing Photos")) }
         }
     }
 
@@ -269,14 +265,15 @@ class LibraryTest : HushTestBase() {
     @Test
     fun refreshReadsTheLibraryAgain() {
         openSection("Albums")
-        val before = model.library
-        if (wide) {
-            tap(desc("Refresh"))
-        } else {
-            compose.onRoot().performTouchInput { swipeDown(startY = height * 0.35f, endY = height * 0.85f, durationMillis = 600) }
+        val songs = model.library.songs.size
+        assertRefreshReadsTheLibrary {
+            if (wide) {
+                tap(desc("Refresh"))
+            } else {
+                compose.onRoot().performTouchInput { swipeDown(startY = height * 0.35f, endY = height * 0.85f, durationMillis = 600) }
+            }
         }
-        waitUntil("the library to be read again", 20_000) { model.library !== before && !model.refreshing }
-        assertEquals(before.songs.size, model.library.songs.size)
+        assertEquals(songs, model.library.songs.size)
     }
 
     @Test

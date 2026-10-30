@@ -174,7 +174,9 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
     val prefs = model.prefs
     val scope = rememberCoroutineScope()
 
-    var sectionName by rememberSaveable {
+    // Read from the saved tab each time this layout comes back (not rememberSaveable), so a section
+    // chosen on the other screen before folding or unfolding is the one shown here.
+    var sectionName by remember {
         mutableStateOf(prefs.getString("tab", WideSection.Albums.name).takeIf { s -> WideSection.entries.any { it.name == s } } ?: WideSection.Albums.name)
     }
     val section = WideSection.valueOf(sectionName)
@@ -209,8 +211,14 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
         }
     }
 
+    // These run later from clicks, through a memoized function reference (onSection = ::select):
+    // read the section from its state when they run, never the `section` captured at composition,
+    // or a tap on the section that was showing when the screen first composed is taken for a
+    // tap on the current one and only scrolls to the top.
+    fun currentSection() = WideSection.valueOf(sectionName)
+
     fun scrollToTop() = scope.launch {
-        when (section) {
+        when (currentSection()) {
             WideSection.Albums -> albumsState.animateScrollToItem(0)
             WideSection.Artists -> artistsState.animateScrollToItem(0)
             WideSection.Playlists -> playlistsState.animateScrollToItem(0)
@@ -229,12 +237,13 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
         // Up Next floats over the content with a tap-to-close scrim: leaving it open would make the
         // next tap on the new section (a video, an album) only close the panel.
         upNextOpen = false
-        if (target == section && stack.isEmpty()) {
+        val current = currentSection()
+        if (target == current && stack.isEmpty()) {
             scrollToTop()
             return
         }
         stack.clear()
-        if (target != section) closeSearch()
+        if (target != current) closeSearch()
         sectionName = target.name
         prefs.putString("tab", target.name)
     }

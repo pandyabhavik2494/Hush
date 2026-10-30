@@ -176,6 +176,10 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
     val pager = rememberPagerState(initialPage = model.prefs.getString("tab", "Albums").let { saved ->
         tabs.indexOfFirst { it.name == saved }.coerceAtLeast(0)
     }) { tabs.size }
+    // The pager restores its own page when this layout comes back after folding or unfolding; the
+    // section chosen on the other screen meanwhile (the saved tab, read afresh here) wins.
+    val chosenTab = remember { tabs.indexOfFirst { it.name == model.prefs.getString("tab", "Albums") }.coerceAtLeast(0) }
+    LaunchedEffect(Unit) { if (pager.currentPage != chosenTab) pager.scrollToPage(chosenTab) }
     val tab = tabs[pager.currentPage]
     LaunchedEffect(tab) { model.prefs.putString("tab", tab.name) }
 

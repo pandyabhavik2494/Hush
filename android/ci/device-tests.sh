@@ -52,6 +52,11 @@ PY
   adb shell input tap $bounds
 }
 
+# Android shows a one-time "Viewing full screen" confirmation the first time an app hides the
+# system bars (Hush's video player does); on a fresh emulator it covers the screen and swallows
+# taps. A person sees it once and taps "Got it"; mark it seen so no test has to.
+adb shell settings put secure immersive_mode_confirmations confirmed
+
 echo "== Smoke test of the release APK =="
 adb logcat -c
 adb install -r "$apk"
@@ -95,6 +100,7 @@ adb logcat -d -b crash > "$results/crash-release.txt"
 adb uninstall com.pandyabhavik.hush >/dev/null || true
 
 run_suite() {  # $1 = label
+  adb shell settings put secure immersive_mode_confirmations confirmed
   adb logcat -G 16M || true
   adb logcat -c
   adb shell rm -rf /sdcard/Download/hush-screens

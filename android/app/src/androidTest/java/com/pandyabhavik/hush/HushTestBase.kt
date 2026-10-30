@@ -203,17 +203,60 @@ abstract class HushTestBase {
         waitUntil("'${matcher.description}' to go away", timeoutMs) { !exists(matcher) }
 
     protected fun tap(matcher: SemanticsMatcher, timeoutMs: Long = 5_000) {
-        compose.waitForIdle()
+        idle()
         waitDisplayed(matcher, timeoutMs)
+        clearOfPlayerBar(matcher)
         node(matcher).performClick()
-        compose.waitForIdle()
+        idle()
     }
 
     protected fun longPress(matcher: SemanticsMatcher) {
-        compose.waitForIdle()
+        idle()
         waitDisplayed(matcher)
+        clearOfPlayerBar(matcher)
         node(matcher).performTouchInput { longClick() }
-        compose.waitForIdle()
+        idle()
+    }
+
+    /**
+     * compose.waitForIdle, once more if a frame trips Compose's "multithreaded access to
+     * SnapshotStateObserver" check: a race between the test thread and the main thread in the
+     * test framework (the app draws only on the main thread), seen once on the emulator.
+     */
+    protected fun idle() {
+        try {
+            compose.waitForIdle()
+        } catch (e: RuntimeException) {
+            val race = generateSequence<Throwable>(e) { it.cause }.any { it.message?.contains("multithreaded access to SnapshotStateObserver") == true }
+            if (!race) throw e
+            Log.w(TAG, "waitForIdle hit the SnapshotStateObserver thread race; waiting again", e)
+            Thread.sleep(300)
+            compose.waitForIdle()
+        }
+    }
+
+    /**
+     * The mini player (cover screen) and the player bar (inner screen) float over the bottom of
+     * lists and pages, which leave room to scroll clear of them. A row under the bar still counts as
+     * "displayed", but a tap there lands on the bar (and opens Now Playing), as a finger would: so
+     * scroll the row up out from under the bar first, as a person would.
+     */
+    private fun clearOfPlayerBar(matcher: SemanticsMatcher) {
+        repeat(6) {
+            val bar = compose.onAllNodes(hasTestTag("miniPlayer")).fetchSemanticsNodes(atLeastOneRootRequired = false).firstOrNull() ?: return
+            val target = node(matcher).fetchSemanticsNode()
+            // A control on the bar itself (its play/pause, Next, Up Next) is meant to be tapped there.
+            val targetLine = generateSequence(target) { it.parent }.toList()
+            if (targetLine.any { it.id == bar.id }) return
+            // A menu or dialog is its own window, drawn above the bar.
+            if (targetLine.last().id != generateSequence(bar) { it.parent }.last().id) return
+            val barBounds = bar.boundsInWindow
+            val center = target.boundsInWindow.center
+            // Above the bar, or beside it (the inner screen's sidebar), a tap reaches the target.
+            if (center.y < barBounds.top - 4f || center.x < barBounds.left || center.x > barBounds.right) return
+            compose.onRoot().performTouchInput { swipeUp(startY = height * 0.6f, endY = height * 0.4f, durationMillis = 400) }
+            compose.waitForIdle()
+        }
     }
 
     /** Taps through the real input system (adb's `input tap`), at a fraction of the node's bounds. */
@@ -355,11 +398,31 @@ abstract class HushTestBase {
             songSearchKey = LibrarySearch.songsKey(songs),
             letter = LibraryAlphabet.section(name),
         )
-        val setter = HushModel::class.java.getDeclaredMethod("setLibrary", Library::class.java).apply { isAccessible = true }
-        compose.runOnUiThread { setter.invoke(model, library.copy(playlists = listOf(playlist))) }
+        putLibrary(library.copy(playlists = listOf(playlist)))
         waitUntil("the test playlist in the library") { model.library.playlists.any { it.name == name } }
         compose.waitForIdle()
         return playlist
+    }
+
+    /** Puts [library] straight into the model (its setter is private to the app). */
+    protected fun putLibrary(library: Library) {
+        val setter = HushModel::class.java.getDeclaredMethod("setLibrary", Library::class.java).apply { isAccessible = true }
+        compose.runOnUiThread { setter.invoke(model, library) }
+    }
+
+    /**
+     * Checks that [trigger] (pull to refresh, Refresh, Look for Missing Photos) reads the library
+     * again. Library is a data class and Compose state keeps the old object when an equal one is
+     * set, so an unchanged library read again can't be told apart by identity. Instead a stand-in
+     * one song short goes in first, and a real reread brings the full library back.
+     */
+    protected fun assertRefreshReadsTheLibrary(trigger: () -> Unit) {
+        val full = model.library
+        putLibrary(full.copy(songs = full.songs.dropLast(1)))
+        waitUntil("the stand-in library") { model.library.songs.size == full.songs.size - 1 }
+        idle()
+        trigger()
+        waitUntil("the library to be read again", 20_000) { model.library.songs.size == full.songs.size && !model.refreshing }
     }
 
     companion object {
