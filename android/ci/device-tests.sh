@@ -58,6 +58,29 @@ else
   echo "::error::Release APK did not keep playing after tapping a song"
   status=1
 fi
+# Lock-screen and notification controls: the media notification is there, and a media key
+# pauses playback while the screen is locked.
+if adb shell dumpsys notification --noredact | grep -A20 "pkg=com.pandyabhavik.hush" | grep -q "mediaSession"; then
+  echo "Release APK: media notification with a session is showing"
+else
+  echo "::error::No media notification for Hush (no lock-screen controls)"
+  adb shell dumpsys notification --noredact > "$results/notifications.txt"
+  status=1
+fi
+adb shell input keyevent KEYCODE_SLEEP
+sleep 2
+adb shell input keyevent KEYCODE_WAKEUP
+sleep 2
+adb exec-out screencap -p > "$results/release-3-lock-screen.png"
+adb shell input keyevent KEYCODE_MEDIA_PAUSE
+sleep 2
+if adb shell dumpsys media_session | grep -Eq "PlaybackState \{state=(2|PAUSED)"; then
+  echo "Release APK: paused from a media key on the lock screen"
+else
+  echo "::error::A media key on the lock screen did not pause Hush"
+  status=1
+fi
+adb shell input keyevent KEYCODE_MENU
 adb logcat -d > "$results/logcat-release.txt"
 adb logcat -d -b crash > "$results/crash-release.txt"
 adb uninstall com.pandyabhavik.hush >/dev/null || true
