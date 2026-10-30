@@ -35,7 +35,8 @@ class HushModel(application: Application) : AndroidViewModel(application) {
     var loaded by mutableStateOf(false); private set
     var refreshing by mutableStateOf(false); private set
     var favoriteArtists by mutableStateOf(prefs.favoriteArtists); private set
-    var playCounts by mutableStateOf(prefs.playCounts()); private set
+    // Read with the library (off the main thread); nothing shows counts before the library is in.
+    var playCounts by mutableStateOf<Map<Long, Int>>(emptyMap()); private set
     var playlistsFolder by mutableStateOf(prefs.playlistsFolder); private set
     var videosFolder by mutableStateOf(prefs.videosFolder); private set
 
@@ -85,8 +86,9 @@ class HushModel(application: Application) : AndroidViewModel(application) {
         val app = getApplication<Application>()
         val playlists = playlistsFolder
         val videos = videosFolder
-        library = withContext(Dispatchers.IO) { LibraryLoader.load(app, playlists, videos) }
-        playCounts = prefs.playCounts()
+        val (read, counts) = withContext(Dispatchers.IO) { LibraryLoader.load(app, playlists, videos) to prefs.playCounts() }
+        library = read
+        playCounts = counts
         loaded = true
     }
 
@@ -96,8 +98,11 @@ class HushModel(application: Application) : AndroidViewModel(application) {
         reload(forgetMisses = true)
     }
 
+    /** Off the main thread: the counts are a JSON object that grows with the library. */
     fun refreshPlayCounts() {
-        playCounts = prefs.playCounts()
+        viewModelScope.launch {
+            playCounts = withContext(Dispatchers.Default) { prefs.playCounts() }
+        }
     }
 
     fun setPlaylistsFolder(uri: Uri) {

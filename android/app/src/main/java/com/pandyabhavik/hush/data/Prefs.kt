@@ -46,6 +46,10 @@ class Prefs(context: Context) {
             .apply()
     }
 
+    fun saveSessionPlace(index: Int, positionMs: Long) {
+        prefs.edit().putInt("session.index", index).putLong("session.position", positionMs).apply()
+    }
+
     fun savePosition(positionMs: Long) = prefs.edit().putLong("session.position", positionMs).apply()
 
     fun session(): Triple<List<String>, Int, Long>? {

@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -83,7 +84,13 @@ fun HushRoot(model: HushModel) {
             // Where you are (pages, player, video) lives in HushModel, so switching keeps it.
             val wide = maxWidth >= 600.dp
             if (granted) CompositionLocalProvider(LocalActions provides actions) {
-                if (wide) WideShell(model, onAbout = { about = true }) else Main(model, onAbout = { about = true })
+                // Each layout keeps its own scroll positions and search text while the other is showing.
+                val saved = rememberSaveableStateHolder()
+                if (wide) saved.SaveableStateProvider("wide") { WideShell(model, onAbout = { about = true }) }
+                else saved.SaveableStateProvider("compact") { Main(model, onAbout = { about = true }) }
+                // The video sits above the switch, so turning the phone (the cover screen in landscape
+                // is wider than 600 dp) or a letterboxed inner screen never closes and restarts it.
+                model.video?.let { VideoPlayer(it, onClose = { model.video = null }) }
             } else Welcome {
                 val permissions = buildList {
                     add(audioPermission)
@@ -165,7 +172,7 @@ private fun Main(model: HushModel, onAbout: () -> Unit) {
             NowPlaying(onClose = { model.playerOpen = false })
         }
 
-        video?.let { VideoPlayer(it, onClose = { model.video = null }) }
+        // The video player is drawn by HushRoot, above both layouts.
     }
 }
 

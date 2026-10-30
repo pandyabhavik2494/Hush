@@ -172,9 +172,9 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
                         }
                     }
                 }
-                // The progress: only the filled part, clipped by the rounded corners.
-                val progress = if (player.durationMs > 0) (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f) else 0f
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(2.dp).background(Hush.ink))
+                // The progress: only the filled part, clipped by the rounded corners; drawn from
+                // the position without recomposing the card.
+                PlaybackProgressLine(Hush.ink, Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp))
             }
         }
         Box(Modifier.align(Alignment.TopStart)) {

@@ -75,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -178,7 +180,8 @@ fun NowPlaying(onClose: () -> Unit) {
         }
     }
 
-    BackHandler { if (showQueue) showQueue = false else close() }
+    // Off while the close animation runs, so a second back reaches the page underneath.
+    BackHandler(enabled = model.playerOpen && !closing) { if (showQueue) showQueue = false else close() }
 
     BoxWithConstraints(
         Modifier
@@ -418,7 +421,8 @@ private fun PlayerArt(song: Song, size: Dp, radius: Dp, shadow: CoverShadow) {
             shown = song
         }
     }
-    val scale by animateFloatAsState(
+    // Read in the layer below, so the spring doesn't recompose the cover every frame.
+    val scale = animateFloatAsState(
         if (player.isPlaying) 1f else 0.84f, spring(dampingRatio = 0.66f, stiffness = 240f), label = "pauseScale",
     )
     var drag by remember { mutableFloatStateOf(0f) }
@@ -428,8 +432,8 @@ private fun PlayerArt(song: Song, size: Dp, radius: Dp, shadow: CoverShadow) {
             .size(size)
             .graphicsLayer {
                 translationX = drag * 0.5f
-                scaleX = scale
-                scaleY = scale
+                scaleX = scale.value
+                scaleY = scale.value
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
@@ -663,10 +667,27 @@ internal fun PlayPauseButton(
 private fun PlayerScrubber(thin: Dp, thick: Dp, modifier: Modifier = Modifier, fill: Color = PlayerInk.cream) {
     val player = LocalActions.current.model.player
     val view = LocalView.current
-    val duration = player.durationMs
-    val currentDuration by rememberUpdatedState(duration)
+    val currentDuration by rememberUpdatedState(player.durationMs)
     var scrub by remember { mutableStateOf<Float?>(null) }
-    val fraction = scrub ?: if (duration > 0) (player.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    // The position ticks four times a second. It is read only while drawing the line and in a
+    // derived state that changes once a second, so the ticks don't recompose the scrubber.
+    val fraction: () -> Float = remember {
+        {
+            val d = currentDuration
+            scrub ?: if (d > 0) (player.positionMs.toFloat() / d).coerceIn(0f, 1f) else 0f
+        }
+    }
+    val times by remember {
+        derivedStateOf {
+            val d = currentDuration
+            val elapsed = (fraction() * d).toLong()
+            ScrubTimes(
+                if (d > 0) timeText(elapsed) else "--:--",
+                if (d > 0) "\u2212" + timeText(d - elapsed) else "--:--",
+                if (d > 0) ((elapsed / 1000) * 1000f / d).coerceIn(0f, 1f) else 0f,
+            )
+        }
+    }
     val thickness by animateDpAsState(if (scrub != null) thick else thin, tween(150, easing = FastOutSlowInEasing), label = "scrubThickness")
     Column(modifier.fillMaxWidth()) {
         Box(
@@ -675,7 +696,7 @@ private fun PlayerScrubber(thin: Dp, thick: Dp, modifier: Modifier = Modifier, f
                 .height(32.dp)
                 .semantics {
                     contentDescription = "Position"
-                    progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                    progressBarRangeInfo = ProgressBarRangeInfo(times.fraction, 0f..1f)
                     setProgress { value ->
                         if (currentDuration > 0) player.seek((value.coerceIn(0f, 1f) * currentDuration).toLong())
                         true
@@ -688,45 +709,52 @@ private fun PlayerScrubber(thin: Dp, thick: Dp, modifier: Modifier = Modifier, f
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         scrub = (down.position.x / width).coerceIn(0f, 1f)
                         var released = false
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                change.consume()
-                                released = true
-                                break
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
+                                    released = true
+                                    break
+                                }
+                                if (change.positionChanged()) {
+                                    change.consume()
+                                    scrub = (change.position.x / width).coerceIn(0f, 1f)
+                                }
                             }
-                            if (change.positionChanged()) {
-                                change.consume()
-                                scrub = (change.position.x / width).coerceIn(0f, 1f)
+                            val at = scrub
+                            if (released && at != null && currentDuration > 0) {
+                                player.seek((at * currentDuration).toLong())
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                             }
+                        } finally {
+                            scrub = null
                         }
-                        val at = scrub
-                        if (released && at != null && currentDuration > 0) {
-                            player.seek((at * currentDuration).toLong())
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                        }
-                        scrub = null
                     }
                 },
             contentAlignment = Alignment.CenterStart,
         ) {
             Box(
-                Modifier.fillMaxWidth().height(thickness).clip(CircleShape).background(PlayerInk.track),
-            ) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(fill))
-            }
+                Modifier
+                    .fillMaxWidth()
+                    .height(thickness)
+                    .clip(CircleShape)
+                    .background(PlayerInk.track)
+                    .drawBehind { drawRect(fill, size = Size(size.width * fraction(), size.height)) },
+            )
         }
         val timeStyle = Hush.sans(12.sp, PlayerInk.secondary, FontWeight.Medium).copy(fontFeatureSettings = "tnum")
         Row(Modifier.fillMaxWidth().offset(y = (-4).dp)) {
-            val known = duration > 0
-            val elapsed = (fraction * duration).toLong()
-            Text(if (known) timeText(elapsed) else "--:--", style = timeStyle)
+            Text(times.elapsed, style = timeStyle)
             Spacer(Modifier.weight(1f))
-            Text(if (known) "−" + timeText(duration - elapsed) else "--:--", style = timeStyle)
+            Text(times.left, style = timeStyle)
         }
     }
 }
+
+/** What the scrubber's labels show; equal values don't recompose. */
+private data class ScrubTimes(val elapsed: String, val left: String, val fraction: Float)
 
 /**
  * The cover's edge colours as a softly drifting gradient, shaded so cream text always reads.
@@ -800,6 +828,13 @@ private fun UpNextSheet(screenHeight: Dp, onClose: () -> Unit) {
     var height by remember { mutableFloatStateOf(medium.value) }
     var settle by remember { mutableStateOf<Job?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    // Finding songs brings up the keyboard: open the sheet fully so the results show above it.
+    LaunchedEffect(adding) {
+        if (adding && height < large.value) {
+            settle?.cancel()
+            animate(height, large.value, animationSpec = spring(dampingRatio = 0.86f, stiffness = 400f)) { v, _ -> height = v }
+        }
+    }
     val dragState = rememberDraggableState { delta ->
         val dp = with(density) { delta.toDp().value }
         height = (height - dp).coerceIn(0f, large.value)

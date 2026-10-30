@@ -136,8 +136,8 @@ fun PlayerBar(upNextOpen: Boolean, onToggleUpNext: () -> Unit, modifier: Modifie
                 Spacer(Modifier.width(8.dp))
                 UpNextToggle(upNextOpen, onToggleUpNext)
             }
-            val progress = if (player.durationMs > 0) (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f) else 0f
-            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(2.dp).background(BarInk.gold.copy(alpha = 0.9f)))
+            // Reads the position only while drawing, so the bar doesn't recompose four times a second.
+            PlaybackProgressLine(BarInk.gold.copy(alpha = 0.9f), Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp))
         }
     }
 }

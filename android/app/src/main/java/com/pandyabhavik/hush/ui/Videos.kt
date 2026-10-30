@@ -79,6 +79,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.pandyabhavik.hush.HushModel
@@ -112,6 +113,9 @@ fun VideosTab(model: HushModel, query: String, state: LazyGridState, padding: Pa
         return
     }
     val actions = LocalActions.current
+    // While a video plays, the tiles underneath stop reading frames: those reads use the same few
+    // hardware video decoders the player needs, and could make the video fail to start.
+    val playingVideo = model.video != null
     BoxWithConstraints {
         val columns = if (maxWidth < 600.dp) 2 else if (maxWidth < 900.dp) 3 else 4
         val targets = if (query.isEmpty()) letterTargets(videos, Video::letter) else emptyList()
@@ -119,7 +123,7 @@ fun VideosTab(model: HushModel, query: String, state: LazyGridState, padding: Pa
             itemsIndexed(videos, key = { _, v -> v.id }) { _, video ->
                 Column(Modifier.clickableQuiet { actions.playVideo(video) }) {
                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Hush.card)) {
-                        Cover(null, Modifier.fillMaxSize(), 0.dp, uri = video.uri, aspect = 16f / 9f, videoFrame = true)
+                        Cover(null, Modifier.fillMaxSize(), 0.dp, uri = video.uri.takeUnless { playingVideo }, aspect = 16f / 9f, videoFrame = true)
                         if (video.durationMs > 0) Text(
                             timeText(video.durationMs),
                             style = Hush.sans(11.sp),
@@ -135,6 +139,13 @@ fun VideosTab(model: HushModel, query: String, state: LazyGridState, padding: Pa
         }
     }
 }
+
+/** Player errors that mean a decoder was busy or failed to start, not that the file can't play. */
+private val retryable = setOf(
+    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FAILED,
+)
 
 /** How the picture fits the screen, as in VLC. */
 enum class VideoFit(val label: String) {
@@ -186,7 +197,8 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
     var scrubbing by remember { mutableStateOf(false) }
 
     val player = remember(video.id) {
-        ExoPlayer.Builder(context)
+        // If the hardware decoder can't start (busy reading tile frames, say), try the next one.
+        ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true))
             // Like music: other sound pauses, and unplugging headphones pauses the video.
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
@@ -201,11 +213,18 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
             playWhenReady = true
         }
     }
+    var retried by remember(video.id) { mutableStateOf(false) }
     DisposableEffect(video.id) {
         if (model.player.isPlaying) model.player.togglePlayback()
         model.videoResume = null
         val listener = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {
+                // A decoder that was busy is worth one more try before giving up.
+                if (!retried && e.errorCode in retryable) {
+                    retried = true
+                    player.prepare()
+                    return
+                }
                 error = "This video can't play on Android. Videos bought from iTunes are copy-protected, " +
                     "so only videos without protection play here."
             }

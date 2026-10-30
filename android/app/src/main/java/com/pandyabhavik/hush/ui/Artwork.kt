@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -56,6 +57,7 @@ import com.pandyabhavik.hush.data.ArtistPhotos
 import com.pandyabhavik.hush.data.Playlist
 import com.pandyabhavik.hush.data.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -65,36 +67,78 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Covers decoded from the songs' embedded artwork, kept in memory while Hush runs.
+ * Covers kept in memory while Hush runs.
+ *
+ * A song's cover comes from MediaStore's thumbnail, which Android keeps on disk, so it is quick
+ * (reading the embedded picture opens and parses the whole audio file). MediaStore's thumbnails
+ * have a size limit, so for the big covers (Now Playing, page headers) the embedded picture is
+ * read instead when the thumbnail falls short of the size asked for.
  *
  * A cover is decoded at a size bucket, but never above its own pixels: a 300 px cover asked for
  * at 1200 stays 300 px, so [Cover] can tell how big it may be drawn without looking soft.
  */
 object Covers {
-    private val cache = object : LruCache<String, Bitmap>(96 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(cacheBytes()) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
     private val missing = HashSet<String>()
     private val frames = Semaphore(2)
-    private val reads = Semaphore(4)
+    private val reads = Semaphore(6)
 
     /** The long side, in pixels, of each cover as it is in the file. */
     private val sources = ConcurrentHashMap<String, Int>()
 
     private val buckets = intArrayOf(160, 320, 480, 720, 1200)
 
+    /**
+     * Up to this bucket (song rows, grid tiles) a MediaStore thumbnail that can fill the bucket
+     * within the 1.3x limit is good enough; above it (Now Playing, page headers) it must have the
+     * pixels outright, or the embedded picture is read.
+     */
+    private const val SMALL_BUCKET = 480
+
+    /** A quarter of the heap limit, between 32 and 128 MB (bitmap pixels live outside the heap). */
+    private fun cacheBytes(): Int {
+        val heap = Runtime.getRuntime().maxMemory()
+        return (heap / 4).coerceIn(32L * 1024 * 1024, 128L * 1024 * 1024).toInt()
+    }
+
     /** Sizes are bucketed so a cover is decoded at most a few times. */
     fun bucket(px: Int): Int = buckets.firstOrNull { px <= it } ?: buckets.last()
 
+    /**
+     * The bucket to use for [uri] at [px]: once the cover's real size is known, asking for more
+     * than it has gives the bucket that already holds all of it, so it is decoded only once.
+     */
+    private fun bucketFor(uri: Uri, px: Int): Int {
+        val size = bucket(px)
+        val source = sources[uri.toString()] ?: return size
+        return minOf(size, bucket(source))
+    }
+
     fun cached(key: String): Bitmap? = cache.get(key)
+
+    /** The cover at [px] if it is in memory: the bucket asked for, or a bigger one (still sharp). */
+    fun cached(uri: Uri, px: Int): Bitmap? {
+        val size = bucketFor(uri, px)
+        cache.get("$uri@$size")?.let { return it }
+        for (b in buckets) if (b > size) cache.get("$uri@$b")?.let { return it }
+        return null
+    }
+
+    /** Any copy of the cover in memory, the smallest first (enough to read its colours). */
+    fun cachedAny(uri: Uri): Bitmap? {
+        for (b in buckets) cache.get("$uri@$b")?.let { return it }
+        return null
+    }
 
     /** The cover's real long side in pixels, once it has been read. */
     fun sourcePx(uri: Uri): Int? = sources[uri.toString()]
 
     suspend fun load(context: Context, uri: Uri, px: Int, videoFrame: Boolean = false): Bitmap? {
-        val size = bucket(px)
+        cached(uri, px)?.let { return it }
+        val size = bucketFor(uri, px)
         val key = "$uri@$size"
-        cache.get(key)?.let { return it }
         synchronized(missing) { if (key in missing) return null }
         if (videoFrame) {
             // Video decoders are few: read two frames at a time, and don't remember a failure,
@@ -104,21 +148,31 @@ object Covers {
             return frame
         }
         val bitmap = reads.withPermit {
-            withContext(Dispatchers.IO) { runCatching { decode(context, uri, size) }.getOrNull() }
+            // Another request may have read it while this one waited.
+            cache.get(key)?.let { return@withPermit it }
+            withContext(Dispatchers.IO) {
+                val scope = this
+                runCatching { decode(context, uri, size) { scope.isActive } }.getOrNull()
+            }
         }
         if (bitmap == null) synchronized(missing) { missing += key } else cache.put(key, bitmap)
         return bitmap
     }
 
-    private fun decode(context: Context, uri: Uri, size: Int): Bitmap? {
+    private fun decode(context: Context, uri: Uri, size: Int, alive: () -> Boolean): Bitmap? {
         if (uri.authority == "media") {
-            // A song: read its embedded picture ourselves, so it is only ever shrunk.
-            embeddedPicture(context, uri)?.let { bytes ->
-                runCatching { shrink(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), uri, size) }.getOrNull()?.let { return it }
+            val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(size, size), null) }.getOrNull()
+            val thumbLong = thumb?.let { max(it.width, it.height) } ?: 0
+            if (thumb != null && (thumbLong >= size || (size <= SMALL_BUCKET && thumbLong * Hush.maxCoverScale >= size))) return thumb
+            // A big cover and the thumbnail is short of it (or there is none): read the embedded
+            // picture ourselves, shrinking only, and keep whichever is bigger.
+            if (!alive()) return thumb
+            val embedded = embeddedPicture(context, uri)?.let { bytes ->
+                runCatching { shrink(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), uri, size) }.getOrNull()
             }
-            // No embedded picture (folder art, say): MediaStore's thumbnail, at most the size asked.
-            val thumb = context.contentResolver.loadThumbnail(uri, Size(size, size), null)
-            sources.putIfAbsent(uri.toString(), max(thumb.width, thumb.height))
+            if (embedded != null && max(embedded.width, embedded.height) > thumbLong) return embedded
+            // No embedded picture (folder art, say): MediaStore's thumbnail is all there is.
+            if (thumb != null && embedded == null) sources.putIfAbsent(uri.toString(), thumbLong)
             return thumb
         }
         return shrink(ImageDecoder.createSource(context.contentResolver, uri), uri, size)
@@ -182,7 +236,8 @@ object ArtworkColors {
     /** The edge colours of the cover at [uri], or null when there is no cover. */
     suspend fun edges(context: Context, uri: Uri): Edges? {
         cache.get(uri.toString())?.let { return it }
-        val bitmap = Covers.load(context, uri, 240) ?: return null
+        // Any copy already in memory will do (Now Playing has usually just loaded the big one).
+        val bitmap = Covers.cachedAny(uri) ?: Covers.load(context, uri, 240) ?: return null
         val edges = withContext(Dispatchers.Default) { runCatching { edgeColors(bitmap) }.getOrNull() } ?: return null
         cache.put(uri.toString(), edges)
         return edges
@@ -263,10 +318,13 @@ private val placeholderBrush = Brush.linearGradient(listOf(Color(0xFF876426), Co
 private fun rememberCover(uri: Uri?, px: Int, videoFrame: Boolean): ImageBitmap? {
     val context = LocalContext.current
     val size = Covers.bucket(px)
-    // Keyed on the cover itself: when the song changes, the old picture must not stay behind.
-    val bitmap = remember(uri, size) { mutableStateOf(uri?.let { Covers.cached("$it@$size") }?.asImageBitmap()) }
+    // Keyed on the cover itself: when the song changes, the old picture must not stay behind. A
+    // new size of the same cover keeps showing the old picture until the new one is ready.
+    val bitmap = remember(uri) { mutableStateOf(uri?.let { Covers.cached(it, px) }?.asImageBitmap()) }
     LaunchedEffect(uri, size) {
-        if (uri != null && bitmap.value == null) bitmap.value = Covers.load(context, uri, px, videoFrame)?.asImageBitmap()
+        if (uri == null) return@LaunchedEffect
+        val ready = Covers.cached(uri, px) ?: Covers.load(context, uri, px, videoFrame) ?: return@LaunchedEffect
+        if (bitmap.value?.asAndroidBitmap() !== ready) bitmap.value = ready.asImageBitmap()
     }
     return bitmap.value
 }
@@ -338,12 +396,17 @@ fun PlaylistCover(playlist: Playlist, modifier: Modifier = Modifier, radius: Dp 
 @Composable
 fun ArtistPhoto(artist: Artist, modifier: Modifier = Modifier, shadow: CoverShadow? = null) {
     val context = LocalContext.current
-    val photo = remember(artist.id) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(artist.id) { photo.value = ArtistPhotos.photo(context, artist)?.asImageBitmap() }
     val shape: Shape = CircleShape
     BoxWithConstraints(modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
+        val density = LocalDensity.current
+        val px = with(density) { (if (maxWidth == Dp.Infinity) 480.dp else maxWidth).roundToPx() }
+        val photo = remember(artist.id) { mutableStateOf(ArtistPhotos.cached(artist, px)?.asImageBitmap()) }
+        LaunchedEffect(artist.id, px) {
+            val ready = ArtistPhotos.cached(artist, px) ?: ArtistPhotos.photo(context, artist, px) ?: return@LaunchedEffect
+            if (photo.value?.asAndroidBitmap() !== ready) photo.value = ready.asImageBitmap()
+        }
         val image = photo.value
-        val cap = if (image != null) with(LocalDensity.current) { (minOf(image.width, image.height) * 1.3f).toDp() } else Dp.Infinity
+        val cap = if (image != null) with(density) { (minOf(image.width, image.height) * 1.3f).toDp() } else Dp.Infinity
         Box(
             Modifier
                 .widthIn(max = cap)

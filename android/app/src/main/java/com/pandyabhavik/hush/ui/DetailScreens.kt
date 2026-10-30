@@ -420,6 +420,18 @@ fun ArtistPage(id: String, bottomPadding: Dp, onBack: () -> Unit) {
             .sortedWith(compareByDescending<IndexedValue<com.pandyabhavik.hush.data.ArtistAlbum>> { it.value.year ?: Int.MIN_VALUE }.thenBy { it.index })
             .map { it.value }
     }
+    // The songs in the order the page shows them, so Play, a tapped song and Up Next all follow
+    // the page (artist.songs is in another order).
+    val ordered = remember(albums) { albums.flatMap { it.songs } }
+    val albumStart = remember(albums) {
+        var at = 0
+        albums.associate { album -> album.albumKey to at.also { at += album.songs.size } }
+    }
+    // Plays are counted by the service as songs start; pick them up while this page is open.
+    LaunchedEffect(player.currentId, player.isPlaying) {
+        delay(600)
+        model.refreshPlayCounts()
+    }
     DetailLayout(
         bottomPadding,
         title = artist.name,
@@ -430,8 +442,8 @@ fun ArtistPage(id: String, bottomPadding: Dp, onBack: () -> Unit) {
                 if (favorite) Icons.Rounded.HeartBroken else Icons.Rounded.FavoriteBorder,
             ) { model.toggleFavorite(id); dismiss() }
             HushMenuDivider()
-            HushMenuItem("Play Next", Icons.AutoMirrored.Rounded.PlaylistPlay) { player.playNext(artist.songs); dismiss() }
-            HushMenuItem("Add to Queue", Icons.AutoMirrored.Rounded.PlaylistAdd) { player.addToQueue(artist.songs); dismiss() }
+            HushMenuItem("Play Next", Icons.AutoMirrored.Rounded.PlaylistPlay) { player.playNext(ordered); dismiss() }
+            HushMenuItem("Add to Queue", Icons.AutoMirrored.Rounded.PlaylistAdd) { player.addToQueue(ordered); dismiss() }
         },
         header = { wide, anchor ->
             Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
@@ -449,7 +461,7 @@ fun ArtistPage(id: String, bottomPadding: Dp, onBack: () -> Unit) {
                 detail, style = Hush.sans(13.sp, Hush.muted, FontWeight.Medium), textAlign = TextAlign.Center,
                 modifier = Modifier.padding(start = 26.dp, end = 26.dp, top = 7.dp),
             )
-            PlayShuffleButtons(artist.songs, Modifier.padding(start = Hush.sideMargin, end = Hush.sideMargin, top = 24.dp, bottom = 18.dp))
+            PlayShuffleButtons(ordered, Modifier.padding(start = Hush.sideMargin, end = Hush.sideMargin, top = 24.dp, bottom = 18.dp))
         },
     ) {
         for (album in albums) {
@@ -463,7 +475,7 @@ fun ArtistPage(id: String, bottomPadding: Dp, onBack: () -> Unit) {
                     ArtistSongRow(
                         song, artist, if (song.track > 0) song.track else index + 1, isCurrent, player.isPlaying,
                         plays = model.playCounts[song.id] ?: 0,
-                    ) { player.play(artist.songs, artist.songs.indexOf(song).coerceAtLeast(0)) }
+                    ) { player.play(ordered, (albumStart[album.albumKey] ?: 0) + index) }
                 }
             }
         }

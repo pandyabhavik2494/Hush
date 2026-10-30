@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -84,6 +85,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -182,31 +184,31 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
     var queryText by rememberSaveable { mutableStateOf("") }
     val query = LibrarySearch.query(queryText)
 
-    val gridStates = mapOf(
-        LibraryTab.Albums to rememberLazyGridState(),
-        LibraryTab.Playlists to rememberLazyGridState(),
-        LibraryTab.Artists to rememberLazyGridState(),
-        LibraryTab.Videos to rememberLazyGridState(),
-    )
+    val albumsState = rememberLazyGridState()
+    val playlistsState = rememberLazyGridState()
+    val artistsState = rememberLazyGridState()
+    val videosState = rememberLazyGridState()
+    val gridStates = remember(albumsState, playlistsState, artistsState, videosState) {
+        mapOf(
+            LibraryTab.Albums to albumsState,
+            LibraryTab.Playlists to playlistsState,
+            LibraryTab.Artists to artistsState,
+            LibraryTab.Videos to videosState,
+        )
+    }
     val songsState = rememberLazyListState()
 
-    // Where the selected tab's list is: drives the hairline and the collapsing tab titles.
+    // Where the selected tab's list is: drives the hairline and the collapsing tab titles. Read
+    // only inside derived states and the small header pieces, so scrolling never recomposes the
+    // whole screen (and with it every page of the pager).
     val density = LocalDensity.current
-    val collapseRange = with(density) { 32.dp.toPx() }
-    fun position(t: LibraryTab): Pair<Int, Int> =
-        if (t == LibraryTab.Songs) songsState.firstVisibleItemIndex to songsState.firstVisibleItemScrollOffset
-        else gridStates.getValue(t).let { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset }
-    val scrolled by remember {
-        derivedStateOf { position(tabs[pager.currentPage]).let { (i, o) -> i > 0 || o > 1 } }
-    }
-    val collapseTarget by remember(collapseRange) {
-        derivedStateOf {
-            val (i, o) = position(tabs[pager.currentPage])
-            if (i > 0) 1f else (o / collapseRange).coerceIn(0f, 1f)
+    val position: (LibraryTab) -> Pair<Int, Int> = remember(gridStates, songsState) {
+        { t ->
+            if (t == LibraryTab.Songs) songsState.firstVisibleItemIndex to songsState.firstVisibleItemScrollOffset
+            else gridStates.getValue(t).let { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset }
         }
     }
-    val collapse by animateFloatAsState(collapseTarget, spring(dampingRatio = 1f, stiffness = 1500f), label = "collapse")
-    val listScrolling by remember {
+    val listScrolling = remember(gridStates, songsState) {
         derivedStateOf {
             val t = tabs[pager.currentPage]
             if (t == LibraryTab.Songs) songsState.isScrollInProgress else gridStates.getValue(t).isScrollInProgress
@@ -233,14 +235,21 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
         searching = false
         queryText = ""
     }
-    BackHandler(enabled = searching) { endSearch() }
+    // Only when the library is what's on screen: with a page, the player or a video on top, back
+    // belongs to them (this handler is registered after the page stack's, so it would win).
+    BackHandler(enabled = searching && model.pages.isEmpty() && !model.playerOpen && model.video == null) { endSearch() }
     // Lists put the keyboard away as soon as they move.
-    LaunchedEffect(listScrolling) {
-        if (listScrolling && searching) {
-            keyboard?.hide()
-            focusManager.clearFocus()
+    LaunchedEffect(searching) {
+        if (!searching) return@LaunchedEffect
+        snapshotFlow { listScrolling.value }.collect { moving ->
+            if (moving) {
+                keyboard?.hide()
+                focusManager.clearFocus()
+            }
         }
     }
+    // Tapping Search again (after a scroll put the keyboard away) brings the keyboard back.
+    var focusTick by remember { mutableIntStateOf(0) }
 
     // The header's height is worked out, not fixed, so larger text never gets cut off.
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -302,7 +311,10 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
                         Text("Hush", style = TextStyle(fontFamily = Hush.wordmark, fontSize = 22.sp, color = Hush.ink))
                     }
                     Spacer(Modifier.weight(1f))
-                    PlainIconButton(Icons.Rounded.Search, "Search", size = 23.dp) { searching = true }
+                    PlainIconButton(Icons.Rounded.Search, "Search", size = 23.dp) {
+                        searching = true
+                        focusTick++
+                    }
                     Box {
                         var options by remember { mutableStateOf(false) }
                         PlainIconButton(Icons.Rounded.FilterList, "Options", size = 23.dp) { options = true }
@@ -335,17 +347,12 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
                     enter = fadeIn(tween(200, easing = LinearOutSlowInEasing)) + expandVertically(tween(200, easing = LinearOutSlowInEasing)),
                     exit = fadeOut(tween(200, easing = LinearOutSlowInEasing)) + shrinkVertically(tween(200, easing = LinearOutSlowInEasing)),
                 ) {
-                    SearchField(queryText, tab.placeholder, searchRow, onChange = { queryText = it }, onCancel = { endSearch() })
+                    SearchField(queryText, tab.placeholder, searchRow, focusTick, onChange = { queryText = it }, onCancel = { endSearch() })
                 }
-                TabsRow(
-                    tabs, pager.currentPage,
-                    height = lerp(stripFull, stripSmall, collapse),
-                    fontSize = 31f + (24f - 31f) * collapse,
-                ) { index ->
+                CollapsingTabs(tabs, pager, position, stripFull, stripSmall) { index ->
                     if (index == pager.currentPage) scrollToTop(tabs[index])
                     else scope.launch { pager.animateScrollToPage(index, animationSpec = Hush.snappy) }
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(if (scrolled) Hush.line else Color.Transparent))
             }
         }
     }
@@ -395,6 +402,39 @@ private fun OptionsMenu(
     }
 }
 
+/**
+ * The tab strip and the hairline under it. The titles shrink as the list scrolls; that animation
+ * is read here only, so it recomposes this strip and nothing else.
+ */
+@Composable
+private fun CollapsingTabs(
+    tabs: List<LibraryTab>,
+    pager: PagerState,
+    position: (LibraryTab) -> Pair<Int, Int>,
+    stripFull: Dp,
+    stripSmall: Dp,
+    onSelect: (Int) -> Unit,
+) {
+    val collapseRange = with(LocalDensity.current) { 32.dp.toPx() }
+    val scrolled by remember(position) {
+        derivedStateOf { position(tabs[pager.currentPage]).let { (i, o) -> i > 0 || o > 1 } }
+    }
+    val collapseTarget by remember(position, collapseRange) {
+        derivedStateOf {
+            val (i, o) = position(tabs[pager.currentPage])
+            if (i > 0) 1f else (o / collapseRange).coerceIn(0f, 1f)
+        }
+    }
+    val collapse by animateFloatAsState(collapseTarget, spring(dampingRatio = 1f, stiffness = 1500f), label = "collapse")
+    TabsRow(
+        tabs, pager.currentPage,
+        height = lerp(stripFull, stripSmall, collapse),
+        fontSize = 31f + (24f - 31f) * collapse,
+        onSelect = onSelect,
+    )
+    Box(Modifier.fillMaxWidth().height(1.dp).background(if (scrolled) Hush.line else Color.Transparent))
+}
+
 /** Serif words for the sections; the chosen one in ink, the rest dim. No underline. */
 @Composable
 private fun TabsRow(tabs: List<LibraryTab>, selected: Int, height: Dp, fontSize: Float, onSelect: (Int) -> Unit) {
@@ -435,10 +475,13 @@ private fun TabsRow(tabs: List<LibraryTab>, selected: Int, height: Dp, fontSize:
 }
 
 @Composable
-private fun SearchField(text: String, placeholder: String, rowHeight: Dp, onChange: (String) -> Unit, onCancel: () -> Unit) {
+private fun SearchField(text: String, placeholder: String, rowHeight: Dp, focusTick: Int, onChange: (String) -> Unit, onCancel: () -> Unit) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(focusTick) {
+        runCatching { focus.requestFocus() }
+        keyboard?.show()
+    }
     Row(
         Modifier.fillMaxWidth().heightIn(min = rowHeight).padding(start = Hush.sideMargin, end = 8.dp, top = 2.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -530,15 +573,23 @@ fun LibraryGrid(
     targets: List<Pair<String, Int>>,
     spacing: Dp = 14.dp,
     rowSpacing: Dp = 14.dp,
+    // Keep the right column clear of the A–Z strip. Off by default under the compact library
+    // header (its look is the iPhone's); on by default elsewhere (the wide screen's videos).
+    reserveScroller: Boolean = LocalLibraryInsets.current.calculateTopPadding() == 0.dp,
     content: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit,
 ) {
     val insets = LocalLibraryInsets.current
+    // Without the compact header's insets, the strip starts where the grid's content does, so it
+    // never runs over a title drawn above the grid.
+    val scrollerTop = if (insets.calculateTopPadding() == 0.dp) padding.calculateTopPadding() else insets.calculateTopPadding()
+    val scrollerBottom = if (insets.calculateBottomPadding() == 0.dp) padding.calculateBottomPadding() else insets.calculateBottomPadding()
+    val end = if (reserveScroller && targets.size >= 2) max(Hush.sideMargin, 36.dp) else Hush.sideMargin
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = state,
             contentPadding = PaddingValues(
-                start = Hush.sideMargin, end = Hush.sideMargin,
+                start = Hush.sideMargin, end = end,
                 top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding(),
             ),
             horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -546,7 +597,7 @@ fun LibraryGrid(
             modifier = Modifier.fillMaxSize(),
             content = content,
         )
-        FastScroller(state, targets, top = insets.calculateTopPadding(), bottom = insets.calculateBottomPadding(), columns = columns)
+        FastScroller(state, targets, top = scrollerTop, bottom = scrollerBottom, columns = columns)
     }
 }
 

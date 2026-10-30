@@ -44,17 +44,35 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs) {
 
     val upNext: List<String> get() = queue.drop(currentIndex + 1)
 
-    fun connect() {
-        if (controller != null) return
-        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        scope.launch {
-            val c = runCatching { MediaController.Builder(context, token).buildAsync().await() }.getOrNull() ?: return@launch
-            controller = c
-            c.addListener(object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) = refresh()
-            })
-            if (c.mediaItemCount == 0) restoreSession(c)
-            refresh()
+    /**
+     * How far through the song, 0 to 1. Reading it subscribes to [positionMs], which changes four
+     * times a second: read it in a draw lambda (or a small leaf composable), never high in a screen.
+     */
+    val progress: Float
+        get() {
+            val duration = durationMs
+            return if (duration > 0) (positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+        }
+
+    /** While Hush is off screen, nothing needs the position four times a second. */
+    private var visible = true
+    private var poll: kotlinx.coroutines.Job? = null
+
+    fun setVisible(on: Boolean) {
+        if (visible == on) return
+        visible = on
+        if (on) {
+            refresh(full = true)
+            startPolling()
+        } else {
+            poll?.cancel()
+            poll = null
+        }
+    }
+
+    private fun startPolling() {
+        if (poll?.isActive == true || controller == null) return
+        poll = scope.launch {
             while (isActive) {
                 controller?.let {
                     positionMs = it.currentPosition
@@ -65,7 +83,26 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs) {
         }
     }
 
+    fun connect() {
+        if (controller != null) return
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        scope.launch {
+            val c = runCatching { MediaController.Builder(context, token).buildAsync().await() }.getOrNull() ?: return@launch
+            controller = c
+            c.addListener(object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) = refresh(
+                    full = events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION),
+                )
+            })
+            if (c.mediaItemCount == 0) restoreSession(c)
+            refresh(full = true)
+            if (visible) startPolling()
+        }
+    }
+
     fun release() {
+        poll?.cancel()
+        poll = null
         controller?.let { prefs.savePosition(it.currentPosition) }
         controller?.release()
         controller = null
@@ -77,12 +114,16 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs) {
         c.prepare()
     }
 
-    private fun refresh() {
+    /**
+     * Copies the player's state into Compose state. The queue is rebuilt only when it may have
+     * changed ([full]): it can hold the whole library, and most events (play, pause, seek) leave it.
+     */
+    private fun refresh(full: Boolean) {
         val c = controller ?: return
         currentId = c.currentMediaItem?.mediaId
         isPlaying = c.isPlaying
         currentIndex = c.currentMediaItemIndex
-        queue = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        if (full || queue.size != c.mediaItemCount) queue = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
         repeatMode = c.repeatMode
         positionMs = c.currentPosition
         durationMs = c.duration.coerceAtLeast(0)

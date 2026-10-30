@@ -1,6 +1,7 @@
 package com.pandyabhavik.hush.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -44,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -83,7 +86,7 @@ fun UpNext(modifier: Modifier = Modifier) {
     val model = LocalActions.current.model
     val player = model.player
     val current = model.library.song(player.currentId)
-    val upNext = player.upNext.mapNotNull { model.library.song(it) }
+    val upNext = rememberUpNext()
     QueueList(
         upNext, rowHeight = 64.dp, modifier = modifier,
         header = {
@@ -133,16 +136,16 @@ fun UpNext(modifier: Modifier = Modifier) {
                 }
             }
         },
-    ) { index, song, handle ->
+    ) { offset, song, handle ->
         Row(
             Modifier
                 .fillMaxSize()
-                .clickable { player.jumpToUpNext(index) }
+                .clickable { player.jumpToUpNext(offset) }
                 .padding(start = 20.dp, end = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             QueueRow(song, isCurrent = false, playing = false, modifier = Modifier.weight(1f))
-            PlainIconButton(Icons.Rounded.RemoveCircleOutline, "Remove", tint = Hush.muted, size = 22.dp) { player.removeFromUpNext(index) }
+            PlainIconButton(Icons.Rounded.RemoveCircleOutline, "Remove", tint = Hush.muted, size = 22.dp) { player.removeFromUpNext(offset) }
             Box(handle.size(48.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.DragHandle, contentDescription = "Reorder", tint = Hush.muted)
             }
@@ -180,27 +183,50 @@ private fun QueueRow(
     }
 }
 
+/** A song coming up and where it really is in the queue (counted from the song after the current one). */
+private class QueueEntry(val offset: Int, val song: Song)
+
+/**
+ * The songs coming up. A queued song no longer in the library is left out of the list but keeps
+ * its place in the count, so jump, remove and move always act on the song that was tapped.
+ */
+@Composable
+private fun rememberUpNext(): List<QueueEntry> {
+    val model = LocalActions.current.model
+    val player = model.player
+    val queue = player.queue
+    val index = player.currentIndex
+    val library = model.library
+    return remember(queue, index, library) {
+        queue.drop(index + 1).withIndex().mapNotNull { (offset, id) -> library.song(id)?.let { QueueEntry(offset, it) } }
+    }
+}
+
 /**
  * The upcoming songs, reorderable by dragging a handle: the dragged row follows the finger and the
- * others slide out of its way. [header] items come first.
+ * others slide out of its way. [header] items come first. [row] gets the song's queue offset.
  */
 @Composable
 private fun QueueList(
-    upNext: List<Song>,
+    upNext: List<QueueEntry>,
     rowHeight: Dp,
     modifier: Modifier = Modifier,
     header: LazyListScope.() -> Unit = {},
-    row: @Composable BoxScope.(index: Int, song: Song, handle: Modifier) -> Unit,
+    row: @Composable BoxScope.(offset: Int, song: Song, handle: Modifier) -> Unit,
 ) {
     val player = LocalActions.current.model.player
     val rowPx = with(LocalDensity.current) { rowHeight.toPx() }
+    // Shown order: the queue, or after a drop the new order until the player reports it, so the
+    // dropped row stays where it was put instead of jumping back for a moment.
+    var shown by remember(upNext) { mutableStateOf(upNext) }
+    val entries by rememberUpdatedState(shown)
     var dragging by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    val target = dragging?.let { (it + (dragOffset / rowPx).roundToInt()).coerceIn(0, upNext.lastIndex.coerceAtLeast(0)) }
+    val target = dragging?.let { (it + (dragOffset / rowPx).roundToInt()).coerceIn(0, shown.lastIndex.coerceAtLeast(0)) }
 
     LazyColumn(modifier) {
         header()
-        itemsIndexed(upNext, key = { i, s -> "q$i-${s.id}" }) { index, song ->
+        itemsIndexed(shown, key = { i, e -> "q$i-${e.song.id}" }) { index, entry ->
             val from = dragging
             val isDragged = from == index
             val makeRoom = when {
@@ -209,20 +235,44 @@ private fun QueueList(
                 from > target && index in target until from -> rowPx
                 else -> 0f
             }
-            val shift by animateFloatAsState(makeRoom, spring(dampingRatio = 0.85f, stiffness = 632f), label = "makeRoom")
-            val handle = Modifier.pointerInput(index, upNext.size) {
-                detectVerticalDragGestures(
-                    onDragStart = { dragging = index; dragOffset = 0f },
-                    onDragEnd = {
-                        val to = (index + (dragOffset / rowPx).roundToInt()).coerceIn(0, upNext.lastIndex)
+            // Rows glide aside while dragging; on the drop they settle at once (the list reorders
+            // in the same frame), or they would slide in from where they were.
+            val shift by animateFloatAsState(
+                makeRoom,
+                if (from == null) snap<Float>() else spring<Float>(dampingRatio = 0.85f, stiffness = 632f),
+                label = "makeRoom",
+            )
+            // Keyed on the list too: `shown` is a new state for each queue, and the drop must write the current one.
+            val handle = Modifier.pointerInput(index, upNext) {
+                fun reset() {
+                    if (dragging == index || dragging == null) {
                         dragging = null
                         dragOffset = 0f
-                        player.moveInUpNext(index, to)
-                    },
-                    onDragCancel = { dragging = null; dragOffset = 0f },
-                ) { change, amount ->
-                    change.consume()
-                    dragOffset += amount
+                    }
+                }
+                try {
+                    detectVerticalDragGestures(
+                        onDragStart = { dragging = index; dragOffset = 0f },
+                        onDragEnd = {
+                            val list = entries
+                            val to = (index + (dragOffset / rowPx).roundToInt()).coerceIn(0, list.lastIndex.coerceAtLeast(0))
+                            if (index in list.indices && to != index) {
+                                val moved = list[index]
+                                val toOffset = list[to].offset
+                                shown = list.toMutableList().apply { add(to, removeAt(index)) }
+                                player.moveInUpNext(moved.offset, toOffset)
+                            }
+                            dragging = null
+                            dragOffset = 0f
+                        },
+                        onDragCancel = { reset() },
+                    ) { change, amount ->
+                        change.consume()
+                        dragOffset += amount
+                    }
+                } finally {
+                    // The gesture was cut off (the row left the list, or the queue moved on).
+                    reset()
                 }
             }
             Box(
@@ -237,7 +287,7 @@ private fun QueueList(
                     }
                     .background(if (isDragged) Color(0xFF262624) else Color.Transparent),
             ) {
-                row(this, index, song, handle)
+                row(this, entry.offset, entry.song, handle)
             }
         }
         item(key = "bottom") { Spacer(Modifier.height(24.dp)) }
@@ -283,7 +333,8 @@ internal fun AddSongs(
                 )
             }
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+        // Results stay above the keyboard.
+        LazyColumn(Modifier.fillMaxWidth().weight(1f).imePadding()) {
             items(found, key = { it.id }) { song ->
                 Row(
                     Modifier.fillMaxWidth().height(62.dp).padding(start = 16.dp, end = 4.dp),
@@ -308,7 +359,7 @@ fun UpNextPanel(modifier: Modifier = Modifier, onClose: () -> Unit, onColor: Boo
     val model = LocalActions.current.model
     val player = model.player
     val current = model.library.song(player.currentId)
-    val upNext = player.upNext.mapNotNull { model.library.song(it) }
+    val upNext = rememberUpNext()
     var adding by rememberSaveable { mutableStateOf(false) }
     Row(
         modifier
@@ -386,13 +437,13 @@ fun UpNextPanel(modifier: Modifier = Modifier, onClose: () -> Unit, onColor: Boo
                         }
                     }
                 },
-            ) { index, song, handle ->
+            ) { offset, song, handle ->
                 Row(
                     Modifier
                         .fillMaxSize()
                         .padding(horizontal = 6.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { player.jumpToUpNext(index) }
+                        .clickable { player.jumpToUpNext(offset) }
                         .padding(start = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -400,7 +451,7 @@ fun UpNextPanel(modifier: Modifier = Modifier, onClose: () -> Unit, onColor: Boo
                         song, isCurrent = false, playing = false, modifier = Modifier.weight(1f),
                         art = 36.dp, artRadius = 5.dp, titleSize = 13f, subSize = 11.5f, subColor = PanelInk.muted,
                     )
-                    PlainIconButton(Icons.Rounded.Close, "Remove", tint = PanelInk.muted, size = 16.dp) { player.removeFromUpNext(index) }
+                    PlainIconButton(Icons.Rounded.Close, "Remove", tint = PanelInk.muted, size = 16.dp) { player.removeFromUpNext(offset) }
                     Box(handle.size(48.dp), contentAlignment = Alignment.Center) {
                         Icon(Icons.Rounded.DragHandle, contentDescription = "Reorder", tint = PanelInk.muted, modifier = Modifier.size(20.dp))
                     }

@@ -74,6 +74,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -225,6 +226,9 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
 
     fun select(target: WideSection) {
         model.playerOpen = false
+        // Up Next floats over the content with a tap-to-close scrim: leaving it open would make the
+        // next tap on the new section (a video, an album) only close the panel.
+        upNextOpen = false
         if (target == section && stack.isEmpty()) {
             scrollToTop()
             return
@@ -237,6 +241,7 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
 
     fun openPlaylistFromSidebar(playlist: Playlist) {
         model.playerOpen = false
+        upNextOpen = false
         closeSearch()
         sectionName = WideSection.Playlists.name
         prefs.putString("tab", WideSection.Playlists.name)
@@ -266,6 +271,12 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
         }
     }
     LaunchedEffect(hasSong) { if (!hasSong) upNextOpen = false }
+    // Opening a page (Go to Album from the bar's menu, say) or a video closes the panel too.
+    var shownDepth by remember { mutableIntStateOf(stack.size) }
+    LaunchedEffect(stack.size, video) {
+        if (stack.size != shownDepth || video != null) upNextOpen = false
+        shownDepth = stack.size
+    }
 
     Box(Modifier.fillMaxSize().background(Wide.paper)) {
         val covered = (playerOpen && hasSong) || video != null
@@ -393,7 +404,7 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
             NowPlaying(onClose = { actions.closePlayer() })
         }
 
-        video?.let { VideoPlayer(it, onClose = { model.video = null }) }
+        // The video player is drawn by HushRoot, above both layouts, so a change of width keeps it playing.
     }
 }
 

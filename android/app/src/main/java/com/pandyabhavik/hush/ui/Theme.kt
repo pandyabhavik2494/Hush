@@ -70,9 +70,9 @@ object Hush {
 
     // Springs converted from the iPhone app: spring(response r, damping ζ) = spring(ζ, (2π / r)²).
     /** Tile press, iPhone TilePressStyle (0.26 s, 0.72). */
-    val tilePress: FiniteAnimationSpec<Float> get() = spring(dampingRatio = 0.72f, stiffness = 584f)
+    val tilePress: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.72f, stiffness = 584f)
     /** Play, Shuffle and other pop buttons, iPhone PopButtonStyle (0.25 s, 0.5). */
-    val popPress: FiniteAnimationSpec<Float> get() = spring(dampingRatio = 0.5f, stiffness = 632f)
+    val popPress: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.5f, stiffness = 632f)
     /** Tab changes and the tab strip centering, iPhone .snappy(0.3). */
-    val snappy: FiniteAnimationSpec<Float> get() = spring(dampingRatio = 0.85f, stiffness = 439f)
+    val snappy: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.85f, stiffness = 439f)
 }

@@ -98,7 +98,8 @@ class HushActions(
 
     fun open(route: Route) {
         showPlayer(false)
-        push(route)
+        // A double tap during the page's slide-in would otherwise open it twice.
+        if (model.pages.lastOrNull() != route) push(route)
     }
     fun openPlayer() = showPlayer(true)
     fun closePlayer() = showPlayer(false)
@@ -359,6 +360,24 @@ fun Equalizer(playing: Boolean, modifier: Modifier = Modifier, color: Color = Hu
                 drawRoundRect(color, Offset(x, h - barH), Size(barW, barH), CornerRadius(barW / 2f))
                 x += barW + gap
             }
+        },
+    )
+}
+
+/**
+ * The thin line along the bottom of the mini player and the player bar, filled as far as the song
+ * has played. The position is read only while drawing, so its four updates a second redraw this
+ * line and recompose nothing. Give it its size with [modifier] (full width, about 2 dp high).
+ */
+@Composable
+fun PlaybackProgressLine(color: Color, modifier: Modifier = Modifier) {
+    val player = LocalActions.current.model.player
+    Spacer(
+        modifier.drawBehind {
+            val filled = size.width * player.progress
+            if (filled <= 0f) return@drawBehind
+            val left = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) size.width - filled else 0f
+            drawRect(color, Offset(left, 0f), Size(filled, size.height))
         },
     )
 }

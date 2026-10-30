@@ -98,14 +98,12 @@ class PlaybackService : MediaSessionService() {
         private var countedFor: String? = null
 
         override fun onEvents(player: Player, events: Player.Events) {
-            if (events.containsAny(
-                    Player.EVENT_TIMELINE_CHANGED,
-                    Player.EVENT_MEDIA_ITEM_TRANSITION,
-                    Player.EVENT_IS_PLAYING_CHANGED,
-                )
-            ) {
+            if (events.contains(Player.EVENT_TIMELINE_CHANGED)) {
                 val ids = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
                 prefs.saveSession(ids, player.currentMediaItemIndex, player.currentPosition)
+            } else if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
+                // The queue is unchanged (it can be the whole library): only where we are in it.
+                prefs.saveSessionPlace(player.currentMediaItemIndex, player.currentPosition)
             }
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                 val id = player.currentMediaItem?.mediaId

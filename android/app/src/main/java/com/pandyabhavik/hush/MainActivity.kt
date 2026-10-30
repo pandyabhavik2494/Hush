@@ -20,8 +20,19 @@ class MainActivity : ComponentActivity() {
         setContent { HushRoot(model) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        model.player.setVisible(true)
+    }
+
     override fun onResume() {
         super.onResume()
         model.refreshPlayCounts()
+    }
+
+    override fun onStop() {
+        // Off screen: stop reading the position four times a second (playback carries on).
+        model.player.setVisible(false)
+        super.onStop()
     }
 }

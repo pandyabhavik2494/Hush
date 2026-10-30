@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,14 +85,14 @@ private fun rememberShown(scrolling: Boolean, touching: Boolean): Boolean {
     return shown
 }
 
-/** The fade: in 180 ms ease-out, out 180 ms ease-in-out. */
+/** The fade: in 180 ms ease-out, out 180 ms ease-in-out. Read it in a draw lambda, not in composition. */
 @Composable
-private fun fade(shown: Boolean): Float =
+private fun fade(shown: Boolean): State<Float> =
     animateFloatAsState(
         if (shown) 1f else 0f,
         if (shown) tween(180, easing = LinearOutSlowInEasing) else tween(180, easing = FastOutSlowInEasing),
         label = "scrollerFade",
-    ).value
+    )
 
 /** The strip's backdrop: translucent dark glass in a capsule with a faint ink edge. */
 private fun Modifier.glassCapsule(): Modifier =
@@ -100,13 +101,15 @@ private fun Modifier.glassCapsule(): Modifier =
 /**
  * A quiet A–Z strip on the right edge: touch or drag a letter to jump there. Letters are spread
  * evenly over the height; the touched letter grows in a small lit box. With [visible] false the
- * strip is transparent and lets touches through.
+ * strip is transparent; with [interactive] false (it may still be fading out) it lets touches
+ * through to whatever is underneath, so it never swallows a tap meant for a tile.
  */
 @Composable
 fun FastScrollIndex(
     targets: List<Pair<String, Int>>,
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    interactive: Boolean = visible,
     onTouch: (Boolean) -> Unit = {},
     onJump: (Int) -> Unit,
 ) {
@@ -119,11 +122,14 @@ fun FastScrollIndex(
     val jump by rememberUpdatedState(onJump)
     val touch by rememberUpdatedState(onTouch)
     val alpha = fade(visible)
+    val currentTargets by rememberUpdatedState(targets)
 
     fun pick(y: Float) {
+        val all = currentTargets
+        if (all.isEmpty()) return
         val usable = height.toFloat()
-        val i = ((y / usable) * targets.size).toInt().coerceIn(0, targets.lastIndex)
-        val (letter, index) = targets[i]
+        val i = ((y / usable) * all.size).toInt().coerceIn(0, all.lastIndex)
+        val (letter, index) = all[i]
         if (letter != active) {
             active = letter
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -143,24 +149,28 @@ fun FastScrollIndex(
         modifier
             .width(32.dp)
             .fillMaxHeight()
-            .graphicsLayer { this.alpha = alpha }
+            .graphicsLayer { this.alpha = alpha.value }
             .then(
-                if (visible || dragging) Modifier.pointerInput(targets) {
+                // Keyed on Unit: a list update mid-drag must not cancel the gesture and leave it stuck.
+                if (interactive || dragging) Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         dragging = true
                         touch(true)
                         down.consume()
-                        pick(down.position.y - 6.dp.toPx())
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            change.consume()
-                            pick(change.position.y - 6.dp.toPx())
+                        try {
+                            pick(down.position.y - 6.dp.toPx())
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                change.consume()
+                                pick(change.position.y - 6.dp.toPx())
+                            }
+                        } finally {
+                            dragging = false
+                            touch(false)
                         }
-                        dragging = false
-                        touch(false)
                     }
                 } else Modifier,
             ),
@@ -221,10 +231,11 @@ fun FastScrollIndex(
  */
 @Composable
 fun ScrollRail(
-    progress: Float,
+    progress: () -> Float,
     visibleFraction: Float,
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    interactive: Boolean = visible,
     onTouch: (Boolean) -> Unit = {},
     onScrub: (Float) -> Unit,
 ) {
@@ -237,16 +248,15 @@ fun ScrollRail(
     val inset = with(density) { 10.dp.toPx() }
     val trackH = (height - inset * 2).coerceAtLeast(1f)
     val thumbH = max(with(density) { 38.dp.toPx() }, trackH * visibleFraction.coerceIn(0f, 1f)).coerceAtMost(trackH)
-    val thumbY = inset + (trackH - thumbH) * progress.coerceIn(0f, 1f)
     val geometry by rememberUpdatedState(floatArrayOf(inset, trackH, thumbH))
 
     Box(
         modifier
             .width(32.dp)
             .fillMaxHeight()
-            .graphicsLayer { this.alpha = alpha }
+            .graphicsLayer { this.alpha = alpha.value }
             .then(
-                if (visible || dragging) Modifier.pointerInput(Unit) {
+                if (interactive || dragging) Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         dragging = true
@@ -256,16 +266,19 @@ fun ScrollRail(
                             val (top, track, thumb) = geometry
                             return ((y - top - thumb / 2) / (track - thumb).coerceAtLeast(1f)).coerceIn(0f, 1f)
                         }
-                        scrub(at(down.position.y))
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            change.consume()
-                            scrub(at(change.position.y))
+                        try {
+                            scrub(at(down.position.y))
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                change.consume()
+                                scrub(at(change.position.y))
+                            }
+                        } finally {
+                            dragging = false
+                            touch(false)
                         }
-                        dragging = false
-                        touch(false)
                     }
                 } else Modifier,
             ),
@@ -290,7 +303,8 @@ fun ScrollRail(
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .offset { IntOffset(0, thumbY.roundToInt()) }
+                    // Read here (layout), so the list scrolling moves the thumb without recomposing.
+                    .offset { IntOffset(0, (inset + (trackH - thumbH) * progress().coerceIn(0f, 1f)).roundToInt()) }
                     .size(5.dp, with(density) { thumbH.toDp() })
                     .background(Hush.accent.copy(alpha = 0.9f), CircleShape),
             )
@@ -374,6 +388,9 @@ private fun BoxScope.Scroller(facts: ScrollFacts, targets: List<Pair<String, Int
     val scrolling by remember(facts) { derivedStateOf { facts.scrolling() } }
     val overflows by remember(facts) { derivedStateOf { facts.overflows() } }
     val shown = rememberShown(scrolling, touching) && overflows
+    // Touches are taken only while the list is actually moving or the strip is held: while it
+    // fades out after a scroll, a tap on the right column's tiles must open them.
+    val interactive = shown && (scrolling || touching)
 
     // One light tick per row while a finger drags or flings the list.
     LaunchedEffect(facts, rowSize) {
@@ -387,13 +404,12 @@ private fun BoxScope.Scroller(facts: ScrollFacts, targets: List<Pair<String, Int
         .align(Alignment.TopEnd)
         .padding(top = top + 8.dp, bottom = bottom + 16.dp)
     if (targets.size > 1) {
-        FastScrollIndex(targets, place, visible = shown, onTouch = { touching = it }) { index ->
+        FastScrollIndex(targets, place, visible = shown, interactive = interactive, onTouch = { touching = it }) { index ->
             scope.launch { facts.jump(index) }
         }
     } else {
-        val progress by remember(facts) { derivedStateOf { facts.progress() } }
         val fraction by remember(facts) { derivedStateOf { facts.visibleFraction() } }
-        ScrollRail(progress, fraction, place, visible = shown, onTouch = { touching = it }) { f ->
+        ScrollRail(facts.progress, fraction, place, visible = shown, interactive = interactive, onTouch = { touching = it }) { f ->
             val last = (facts.total() - facts.visibleCount()).coerceAtLeast(0)
             scope.launch { facts.jump((f * last).roundToInt()) }
         }
