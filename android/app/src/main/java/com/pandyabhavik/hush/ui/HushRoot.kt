@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -120,7 +121,11 @@ private fun Main(model: HushModel) {
     CompositionLocalProvider(LocalActions provides actions) {
         Box(Modifier.fillMaxSize()) {
             // The library stays underneath, so its tabs and scroll positions are kept.
-            LibraryScreen(model, bottomPadding) { about = true }
+            // Hidden from TalkBack (and tests) while a page or the player covers it.
+            val covered = stack.isNotEmpty() || playerOpen
+            Box(if (covered) Modifier.clearAndSetSemantics { } else Modifier) {
+                LibraryScreen(model, bottomPadding) { about = true }
+            }
 
             AnimatedContent(
                 targetState = stack.size to stack.lastOrNull(),
