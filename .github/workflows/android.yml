@@ -55,6 +55,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # The Fold's two screens are tested side by side, on two emulators at once.
+    strategy:
+      fail-fast: false
+      matrix:
+        screen: [cover-screen, inner-screen]
     steps:
       - uses: actions/checkout@v4
 
@@ -91,16 +96,16 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: android
-          script: bash ci/device-tests.sh "${{ runner.temp }}/media" "${{ runner.temp }}/apk/Hush-ci.apk" "${{ runner.temp }}/results"
+          script: bash ci/device-tests.sh "${{ runner.temp }}/media" "${{ runner.temp }}/apk/Hush-ci.apk" "${{ runner.temp }}/results" ${{ matrix.screen }}
 
       - name: Bundle the results
         if: always()
-        run: cd "${{ runner.temp }}" && zip -qr test-results.zip results
+        run: cd "${{ runner.temp }}" && zip -qr test-results-${{ matrix.screen }}.zip results
 
       - name: Publish the results
         if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-${{ github.run_number }}
-          files: ${{ runner.temp }}/test-results.zip
+          files: ${{ runner.temp }}/test-results-${{ matrix.screen }}.zip
           prerelease: true

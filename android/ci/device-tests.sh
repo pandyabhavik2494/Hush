@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Runs inside the emulator job: copies the test media on, smoke-tests the release APK the way a
-# person would (tap a song, keep playing), then runs the instrumented tests on two screen sizes.
+# person would (tap a song, keep playing), then runs the instrumented tests at one of the Fold's screen sizes.
 set -uo pipefail
 media="$1"      # from make-test-media.sh
 apk="$2"        # the release APK
 results="$3"
+screen="$4"     # cover-screen or inner-screen
 mkdir -p "$results"
 status=0
 
@@ -67,15 +68,16 @@ run_suite() {  # $1 = label
   adb logcat -d -b crash > "$results/$1/crash.txt"
 }
 
-echo "== Instrumented tests, phone-sized screen (like the Fold's cover screen) =="
-adb shell wm size 1080x2520
-adb shell wm density 420
-run_suite cover-screen
-
-echo "== Instrumented tests, the Fold's inner screen size =="
-adb shell wm size 1968x2184
-adb shell wm density 374
-run_suite inner-screen
+if [ "$screen" = cover-screen ]; then
+  echo "== Instrumented tests, phone-sized screen (like the Fold's cover screen) =="
+  adb shell wm size 1080x2520
+  adb shell wm density 420
+else
+  echo "== Instrumented tests, the Fold's inner screen size =="
+  adb shell wm size 1968x2184
+  adb shell wm density 374
+fi
+run_suite "$screen"
 adb shell wm size reset
 adb shell wm density reset
 
