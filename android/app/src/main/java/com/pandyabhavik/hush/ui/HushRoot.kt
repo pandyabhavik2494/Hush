@@ -17,6 +17,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -69,6 +71,7 @@ fun HushRoot(model: HushModel) {
         }
         LaunchedEffect(granted) { if (granted) model.start() }
 
+        CrashReport()
         Box(Modifier.fillMaxSize().background(Hush.paper)) {
             if (granted) Main(model) else Welcome {
                 val permissions = buildList {
@@ -168,4 +171,41 @@ private fun Main(model: HushModel) {
             confirmButton = { TextButton(onClick = { about = false }) { Text("Done", color = Hush.ink) } },
         )
     }
+}
+
+/** After an unexpected close, show what went wrong once, with a button to copy it. */
+@Composable
+private fun CrashReport() {
+    val context = LocalContext.current
+    val file = remember { com.pandyabhavik.hush.HushApplication.crashFile(context.applicationContext as android.app.Application) }
+    var report by remember { mutableStateOf(if (file.exists()) file.readText() else null) }
+    val text = report ?: return
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    fun dismiss() {
+        file.delete()
+        report = null
+    }
+    AlertDialog(
+        onDismissRequest = ::dismiss,
+        containerColor = Hush.card,
+        title = { Text("Hush closed unexpectedly", style = Hush.serif(22.sp)) },
+        text = {
+            Column {
+                Text("Copy the details and paste them to Claude so it can be fixed.", style = Hush.sans(15.sp, Hush.muted))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text.lines().take(14).joinToString("\n"),
+                    style = Hush.sans(11.sp, Hush.muted),
+                    modifier = Modifier.height(180.dp).verticalScroll(rememberScrollState()),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                clipboard.setText(androidx.compose.ui.text.AnnotatedString(text))
+                dismiss()
+            }) { Text("Copy Details", color = Hush.ink) }
+        },
+        dismissButton = { TextButton(onClick = ::dismiss) { Text("Close", color = Hush.muted) } },
+    )
 }
