@@ -9,6 +9,11 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.hasTextExactly
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -88,7 +93,7 @@ class HushDeviceTest {
         val first = model.player.currentId
         compose.onNodeWithContentDescription("Next").performClick()
         compose.waitUntil(10_000) { model.player.currentId != first }
-        compose.onNodeWithContentDescription("Pause").performClick()
+        compose.onAllNodes(hasContentDescription("Pause")).onLast().performClick()
         compose.waitUntil(5_000) { !model.player.isPlaying }
         compose.onNodeWithContentDescription("Up Next").performClick()
         shot("05-up-next")
@@ -108,7 +113,7 @@ class HushDeviceTest {
         compose.waitUntil(15_000) { model.player.isPlaying && model.player.shuffled }
         Thread.sleep(2000)
 
-        compose.onNodeWithText("Hush Test Artist").performClick()
+        compose.onNode(hasTextExactly("Hush Test Artist") and hasClickAction()).performClick()
         compose.waitUntil(5_000) { compose.onAllNodes(hasText("3 songs", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         shot("07-artist")
         // "Hush Test Artist & Guest Singer" credits both singers.
@@ -146,12 +151,25 @@ class HushDeviceTest {
     }
 
     @Test
+    fun searchFindsSongs() {
+        openTab(1, "Songs")
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("three")
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Hush Test One", substring = true)).fetchSemanticsNodes().isEmpty() }
+        assertTrue(compose.onAllNodes(hasText("Hush Test Three", substring = true)).fetchSemanticsNodes().isNotEmpty())
+        shot("13-search")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Hush Test One", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
     fun coversAndPlaylistsTabsShow() {
         compose.onAllNodesWithText("Albums").onFirst().performClick()
         shot("10-albums-grid")
         openTab(2, "Playlists")
         shot("11-playlists-empty")
         openTab(3, "Artists")
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Guest Singer")).fetchSemanticsNodes().isNotEmpty() }
         shot("12-artists")
         assertTrue(compose.onAllNodes(hasTestTag("tabs")).fetchSemanticsNodes().isNotEmpty())
     }

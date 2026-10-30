@@ -113,6 +113,7 @@ object PlaylistFiles {
         private val byTail2 = HashMap<String, Song>()
         private val byFile = HashMap<String, MutableList<Song>>()
         private val byInfo = HashMap<String, Song>()
+        private val byTitle = HashMap<String, MutableList<Song>>()
 
         init {
             for (song in songs) {
@@ -121,6 +122,7 @@ object PlaylistFiles {
                 if (parts.size >= 2) byTail2.putIfAbsent(parts.takeLast(2).joinToString("/"), song)
                 parts.lastOrNull()?.let { byFile.getOrPut(it) { ArrayList() }.add(song) }
                 byInfo.putIfAbsent(LibrarySearch.fold("${song.artist} - ${song.title}"), song)
+                byTitle.getOrPut(LibrarySearch.fold(song.title)) { ArrayList() }.add(song)
             }
         }
 
@@ -139,8 +141,15 @@ object PlaylistFiles {
                     sameName.firstOrNull { LibrarySearch.fold(it.album) == folder }?.let { return it }
                 }
             }
-            line.info?.let { info -> byInfo[LibrarySearch.fold(info)]?.let { return it } }
-            return null
+            val info = line.info ?: return null
+            byInfo[LibrarySearch.fold(info)]?.let { return it }
+            // "Artist - Title" where the phone credits the artists differently: the title alone,
+            // if only one song has it (or only one by an artist named in the line).
+            val title = LibrarySearch.fold(info.substringAfter(" - ", info).trim())
+            val sameTitle = byTitle[title].orEmpty()
+            if (sameTitle.size == 1) return sameTitle.first()
+            val artistPart = LibrarySearch.fold(info.substringBefore(" - ", ""))
+            return sameTitle.firstOrNull { artistPart.isNotEmpty() && LibrarySearch.fold(it.artist).contains(artistPart) }
         }
     }
 }

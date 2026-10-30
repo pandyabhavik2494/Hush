@@ -411,8 +411,9 @@ private fun ArtistsTab(model: HushModel, query: String, sort: LibrarySort, state
         var found = LibrarySearch.filterByNameThenSongs(library.artists, query, Artist::searchKey, Artist::songSearchKey)
         found = when (sort) {
             LibrarySort.Favorites -> {
-                // Only favourites, most songs first. While searching, every match shows (favourites first).
-                val pool = if (query.isEmpty()) found.filter { it.id in favorites } else found
+                // Only favourites, most songs first. While searching, or before any favourites are
+                // chosen, every artist shows (favourites first).
+                val pool = if (query.isEmpty() && found.any { it.id in favorites }) found.filter { it.id in favorites } else found
                 pool.withIndex().sortedWith(
                     compareBy<IndexedValue<Artist>> { it.value.id !in favorites }
                         .thenByDescending { it.value.songs.size }
@@ -424,10 +425,6 @@ private fun ArtistsTab(model: HushModel, query: String, sort: LibrarySort, state
             LibrarySort.Alphabetical -> found
         }
         found
-    }
-    if (model.loaded && artists.isEmpty() && sort == LibrarySort.Favorites && query.isEmpty()) {
-        EmptyMessage("No favourites yet", "Open an artist and choose Add to Favorites from the … menu, or pick another sort in Options.")
-        return
     }
     val actions = LocalActions.current
     BoxWithConstraints {
