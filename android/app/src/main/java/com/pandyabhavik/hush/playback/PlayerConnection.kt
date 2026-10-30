@@ -167,8 +167,13 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs) {
     fun togglePlayback() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else {
-            if (c.playbackState == Player.STATE_IDLE) c.prepare()
-            if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition(0)
+            when (c.playbackState) {
+                Player.STATE_IDLE -> c.prepare()
+                Player.STATE_ENDED -> c.seekTo(0, 0)
+                // Ready but held back (audio focus lost, or the end of the queue not yet reported):
+                // play() alone would change nothing, so ask again from a paused start.
+                else -> if (c.playWhenReady) c.pause()
+            }
             c.play()
         }
     }
