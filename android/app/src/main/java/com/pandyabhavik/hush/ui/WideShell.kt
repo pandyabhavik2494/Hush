@@ -349,7 +349,7 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { upNextOpen = false },
                     )
                 }
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = upNextOpen && hasSong,
                     enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(240)),
                     exit = slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)),
@@ -364,7 +364,7 @@ fun WideShell(model: HushModel, onAbout: () -> Unit) {
                     }
                 }
 
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = hasSong && video == null,
                     enter = slideInVertically(tween(320)) { it } + fadeIn(tween(240)),
                     exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(200)),
