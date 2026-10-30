@@ -74,7 +74,7 @@ else
 fi
 # Lock-screen and notification controls: the media notification is there, and a media key
 # pauses playback while the screen is locked.
-if adb shell dumpsys notification --noredact | grep -A20 "pkg=com.pandyabhavik.hush" | grep -q "mediaSession"; then
+if adb shell dumpsys notification --noredact | grep -A120 "pkg=com.pandyabhavik.hush" | grep -q "android.mediaSession"; then
   echo "Release APK: media notification with a session is showing"
 else
   echo "::error::No media notification for Hush (no lock-screen controls)"
