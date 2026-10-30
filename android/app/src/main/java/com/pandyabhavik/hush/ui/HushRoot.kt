@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -41,9 +42,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -72,8 +73,18 @@ fun HushRoot(model: HushModel) {
         LaunchedEffect(granted) { if (granted) model.start() }
 
         CrashReport()
-        Box(Modifier.fillMaxSize().background(Hush.paper)) {
-            if (granted) Main(model) else Welcome {
+        // Kept here so the dialog stays open when the phone is folded or unfolded.
+        var about by rememberSaveable { mutableStateOf(false) }
+        val actions = remember(model) {
+            HushActions(model, push = { model.pages.add(it) }, showPlayer = { model.playerOpen = it }, showVideo = { model.video = it })
+        }
+        BoxWithConstraints(Modifier.fillMaxSize().background(Hush.paper)) {
+            // The unfolded Fold (600 dp and wider) gets the Mac-style layout; the cover screen the phone one.
+            // Where you are (pages, player, video) lives in HushModel, so switching keeps it.
+            val wide = maxWidth >= 600.dp
+            if (granted) CompositionLocalProvider(LocalActions provides actions) {
+                if (wide) WideShell(model, onAbout = { about = true }) else Main(model, onAbout = { about = true })
+            } else Welcome {
                 val permissions = buildList {
                     add(audioPermission)
                     if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
@@ -81,6 +92,7 @@ fun HushRoot(model: HushModel) {
                 request.launch(permissions.toTypedArray())
             }
         }
+        if (about) AboutDialog(model) { about = false }
     }
 }
 
@@ -103,81 +115,76 @@ private fun Welcome(onAllow: () -> Unit) {
 }
 
 @Composable
-private fun Main(model: HushModel) {
+private fun Main(model: HushModel, onAbout: () -> Unit) {
     val stack = model.pages
     val playerOpen = model.playerOpen
     val video = model.video
-    var about by rememberSaveable { mutableStateOf(false) }
-    val actions = remember(model) {
-        HushActions(model, push = { stack.add(it) }, showPlayer = { model.playerOpen = it }, showVideo = { model.video = it })
-    }
     val hasSong = model.library.song(model.player.currentId) != null
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomPadding = if (hasSong) 64.dp + 12.dp + navBottom else navBottom
 
     BackHandler(enabled = stack.isNotEmpty() && !playerOpen && video == null) { stack.removeAt(stack.lastIndex) }
 
-    CompositionLocalProvider(LocalActions provides actions) {
-        Box(Modifier.fillMaxSize()) {
-            // The library stays underneath, so its tabs and scroll positions are kept.
-            // Hidden from TalkBack (and tests) while a page or the player covers it.
-            val covered = stack.isNotEmpty() || playerOpen || video != null
-            Box(if (covered) Modifier.clearAndSetSemantics { } else Modifier) {
-                LibraryScreen(model, bottomPadding) { about = true }
-            }
-
-            AnimatedContent(
-                targetState = stack.size to stack.lastOrNull(),
-                transitionSpec = {
-                    if (targetState.first > initialState.first) {
-                        slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200)) togetherWith fadeOut(tween(160))
-                    } else {
-                        fadeIn(tween(160)) togetherWith slideOutHorizontally(tween(240)) { it / 3 } + fadeOut(tween(200))
-                    }
-                },
-                label = "pages",
-            ) { (_, route) ->
-                val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
-                when (route) {
-                    null -> Box(Modifier.fillMaxSize())
-                    is Route.AlbumPage -> AlbumPage(route.key, bottomPadding, back)
-                    is Route.PlaylistPage -> PlaylistPage(route.id, bottomPadding, back)
-                    is Route.ArtistPage -> ArtistPage(route.id, bottomPadding, back)
-                }
-            }
-
-            if (hasSong && video == null) {
-                MiniPlayer(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp).fillMaxWidth())
-            }
-
-            AnimatedVisibility(
-                visible = playerOpen && hasSong,
-                enter = slideInVertically(tween(320)) { it },
-                exit = slideOutVertically(tween(260)) { it },
-            ) {
-                NowPlaying(onClose = { model.playerOpen = false })
-            }
-
-            video?.let { VideoPlayer(it, onClose = { model.video = null }) }
+    Box(Modifier.fillMaxSize()) {
+        // The library stays underneath, so its tabs and scroll positions are kept.
+        // Hidden from TalkBack (and tests) while a page or the player covers it.
+        val covered = stack.isNotEmpty() || playerOpen || video != null
+        Box(if (covered) Modifier.clearAndSetSemantics { } else Modifier) {
+            LibraryScreen(model, bottomPadding, onAbout)
         }
-    }
 
-    if (about) {
-        AlertDialog(
-            onDismissRequest = { about = false },
-            containerColor = Hush.card,
-            title = { Text("Hush", style = TextStyle(fontFamily = Hush.wordmark, fontSize = 28.sp, color = Hush.ink)) },
-            text = {
-                Text(
-                    "A quiet player for the music on this phone. Version ${BuildConfigInfo.versionName(LocalContext.current)}.\n\n" +
-                        "No accounts, no ads, no tracking. Only artist names are sent to Deezer, to find artist photos.\n\n" +
-                        "${model.library.songs.size} songs · ${model.library.albums.size} albums · ${model.library.playlists.size} playlists",
-                    style = Hush.sans(15.sp, Hush.muted),
-                )
+        AnimatedContent(
+            targetState = stack.size to stack.lastOrNull(),
+            transitionSpec = {
+                if (targetState.first > initialState.first) {
+                    slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200)) togetherWith fadeOut(tween(160))
+                } else {
+                    fadeIn(tween(160)) togetherWith slideOutHorizontally(tween(240)) { it / 3 } + fadeOut(tween(200))
+                }
             },
-            confirmButton = { TextButton(onClick = { about = false }) { Text("Done", color = Hush.ink) } },
-        )
+            label = "pages",
+        ) { (_, route) ->
+            val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
+            when (route) {
+                null -> Box(Modifier.fillMaxSize())
+                is Route.AlbumPage -> AlbumPage(route.key, bottomPadding, back)
+                is Route.PlaylistPage -> PlaylistPage(route.id, bottomPadding, back)
+                is Route.ArtistPage -> ArtistPage(route.id, bottomPadding, back)
+            }
+        }
+
+        if (hasSong && video == null) {
+            MiniPlayer(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp).fillMaxWidth())
+        }
+
+        AnimatedVisibility(
+            visible = playerOpen && hasSong,
+            enter = slideInVertically(tween(320)) { it },
+            exit = slideOutVertically(tween(260)) { it },
+        ) {
+            NowPlaying(onClose = { model.playerOpen = false })
+        }
+
+        video?.let { VideoPlayer(it, onClose = { model.video = null }) }
     }
+}
+
+@Composable
+private fun AboutDialog(model: HushModel, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Hush.card,
+        title = { Text("Hush", style = TextStyle(fontFamily = Hush.wordmark, fontSize = 28.sp, color = Hush.ink)) },
+        text = {
+            Text(
+                "A quiet player for the music on this phone. Version ${BuildConfigInfo.versionName(LocalContext.current)}.\n\n" +
+                    "No accounts, no ads, no tracking. Only artist names are sent to Deezer, to find artist photos.\n\n" +
+                    "${model.library.songs.size} songs · ${model.library.albums.size} albums · ${model.library.playlists.size} playlists",
+                style = Hush.sans(15.sp, Hush.muted),
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Hush.ink) } },
+    )
 }
 
 /** After an unexpected close, show what went wrong once, with a button to copy it. */

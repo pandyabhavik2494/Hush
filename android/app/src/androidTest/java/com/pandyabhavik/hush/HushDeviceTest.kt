@@ -82,9 +82,12 @@ class HushDeviceTest {
         if (model.videosFolder != null) compose.runOnUiThread { model.forgetVideosFolder() }
     }
 
+    /** A library section: a tab on the cover screen, a sidebar item on the inner screen. */
     private fun openTab(index: Int, title: String) {
-        compose.onNodeWithTag("tabs").performScrollToIndex(index)
-        compose.onNodeWithText(title).performClick()
+        if (compose.onAllNodes(hasTestTag("tabs")).fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithTag("tabs").performScrollToIndex(index)
+        }
+        compose.onAllNodes(hasTextExactly(title) and hasClickAction()).onFirst().performClick()
         compose.waitForIdle()
     }
 
@@ -240,7 +243,7 @@ class HushDeviceTest {
 
     @Test
     fun coversAndPlaylistsTabsShow() {
-        compose.onAllNodesWithText("Albums").onFirst().performClick()
+        openTab(0, "Albums")
         shot("10-albums-grid")
         openTab(2, "Playlists")
         shot("11-playlists-empty")
