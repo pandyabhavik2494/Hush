@@ -54,7 +54,7 @@ jobs:
   device-tests:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     # The Fold's two screens are tested side by side, on two emulators at once.
     strategy:
       fail-fast: false
@@ -75,7 +75,7 @@ jobs:
           name: apk
           path: ${{ runner.temp }}/apk
 
-      - name: Make test songs and a test video
+      - name: Make test songs and test videos
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
           bash android/ci/make-test-media.sh "${{ runner.temp }}/media"

@@ -150,6 +150,8 @@ private fun Main(model: HushModel, onAbout: () -> Unit) {
                 }
             },
             label = "pages",
+            // Under Now Playing or a video the page is hidden from TalkBack, like the library.
+            modifier = if (playerOpen || video != null) Modifier.clearAndSetSemantics { } else Modifier,
         ) { (_, route) ->
             val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
             when (route) {
@@ -161,7 +163,10 @@ private fun Main(model: HushModel, onAbout: () -> Unit) {
         }
 
         if (hasSong && video == null) {
-            MiniPlayer(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp).fillMaxWidth())
+            MiniPlayer(
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp).fillMaxWidth()
+                    .then(if (playerOpen) Modifier.clearAndSetSemantics { } else Modifier),
+            )
         }
 
         AnimatedVisibility(

@@ -16,10 +16,19 @@ for i in $(seq 60); do adb shell 'mkdir -p /sdcard/Music && touch /sdcard/Music/
 for i in 1 2 3; do adb push "$media/Music/." /sdcard/Music/ >/dev/null && break; sleep 5; done
 adb shell mkdir -p "'/sdcard/Music Videos'"
 for i in 1 2 3; do adb push "$media/Music Videos/." "/sdcard/Music Videos/" >/dev/null && break; sleep 5; done
-for i in 1 2 3 4 5 6; do
+# The device tests read the videos from here: a test's shell commands can't quote paths, so no spaces.
+adb shell mkdir -p /data/local/tmp/hush-videos
+for f in "$media/Music Videos/"*; do
+  adb push "$f" "/data/local/tmp/hush-videos/$(basename "$f" | tr ' ' '_')" >/dev/null
+done
+adb shell ls -l /data/local/tmp/hush-videos
+songs=$(find "$media/Music" -name '*.m4a' | wc -l)
+for i in $(seq 12); do
   adb shell content call --uri content://media --method scan_volume --arg external_primary >/dev/null || true
   sleep 5
-  adb shell content query --uri content://media/external/audio/media --projection title | grep -q "Hush Test" && break
+  found=$(adb shell content query --uri content://media/external/audio/media --projection title | grep -c "title=" || true)
+  echo "MediaStore has $found of $songs test songs"
+  [ "$found" -ge "$songs" ] && break
 done
 adb shell content query --uri content://media/external/audio/media --projection title:relative_path | head -5
 
@@ -86,14 +95,18 @@ adb logcat -d -b crash > "$results/crash-release.txt"
 adb uninstall com.pandyabhavik.hush >/dev/null || true
 
 run_suite() {  # $1 = label
+  adb logcat -G 16M || true
   adb logcat -c
   adb shell rm -rf /sdcard/Download/hush-screens
   if ! ./gradlew --no-daemon connectedDebugAndroidTest; then status=1; fi
   mkdir -p "$results/$1"
   adb pull /sdcard/Download/hush-screens/. "$results/$1/" >/dev/null || true
   cp -r app/build/reports/androidTests/connected "$results/$1/report" 2>/dev/null || true
+  cp -r app/build/outputs/androidTest-results/connected "$results/$1/xml" 2>/dev/null || true
   adb logcat -d > "$results/$1/logcat.txt"
   adb logcat -d -b crash > "$results/$1/crash.txt"
+  echo "== Timings (HushPerf) =="
+  grep -h "HushPerf" "$results/$1/logcat.txt" | tail -20 || true
 }
 
 if [ "$screen" = cover-screen ]; then

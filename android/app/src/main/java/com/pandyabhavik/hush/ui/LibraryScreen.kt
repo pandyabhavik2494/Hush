@@ -94,6 +94,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -842,7 +844,9 @@ private fun CoverTile(
     var menu by remember { mutableStateOf(false) }
     Box {
         Column(
-            Modifier.tilePressable(onLongClick = { menu = true }, onClick = onClick),
+            Modifier.tilePressable(onLongClick = { menu = true }, onClick = onClick)
+                // Named for TalkBack even when titles are hidden.
+                .then(if (showTitle) Modifier else Modifier.semantics { contentDescription = title }),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Box {

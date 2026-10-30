@@ -1,141 +1,74 @@
 package com.pandyabhavik.hush
 
-import android.Manifest
 import android.content.pm.ActivityInfo
-import android.net.Uri
-import android.os.ParcelFileDescriptor
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.click
-import androidx.compose.ui.test.onRoot
-import java.io.File
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onLast
-import androidx.compose.ui.test.hasTextExactly
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.rule.GrantPermissionRule
 import com.pandyabhavik.hush.data.PlaylistFiles
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Runs on an emulator in CI with test songs and a test video copied onto it
- * (see android/ci/device-tests.sh). Screenshots go to /sdcard/Download/hush-screens.
+ * The original smoke tests: a song plays, album and artist pages play, playlist files match,
+ * videos ask for a folder and play, search works, the sections show. See [HushTestBase] for the media.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
-class HushDeviceTest {
-    @get:Rule(order = 0)
-    val permissions: GrantPermissionRule = GrantPermissionRule.grant(
-        Manifest.permission.READ_MEDIA_AUDIO,
-        Manifest.permission.POST_NOTIFICATIONS,
-    )
-
-    @get:Rule(order = 1)
-    val compose = createAndroidComposeRule<MainActivity>()
-
-    private val model get() = ViewModelProvider(compose.activity)[HushModel::class.java]
-
-    private fun shot(name: String) {
-        compose.waitForIdle()
-        Thread.sleep(400)
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        automation.executeShellCommand("mkdir -p /sdcard/Download/hush-screens").close()
-        val size = compose.activity.resources.displayMetrics.let { "${it.widthPixels}x${it.heightPixels}" }
-        automation.executeShellCommand("screencap -p /sdcard/Download/hush-screens/$size-$name.png").close()
-        Thread.sleep(600)
-    }
-
-    @Before
-    fun waitForLibrary() {
-        compose.waitUntil(30_000) { model.loaded && model.library.songs.size >= 3 }
-        compose.waitUntil(15_000) { model.player.currentId != null || compose.activity.isFinishing.not() }
-    }
-
-    /** Tests share the app's settings; leave the videos folder unset for the next one. */
-    @After
-    fun forgetTestVideosFolder() {
-        if (model.videosFolder != null) compose.runOnUiThread { model.forgetVideosFolder() }
-    }
-
-    /** A library section: a tab on the cover screen, a sidebar item on the inner screen. */
-    private fun openTab(index: Int, title: String) {
-        if (compose.onAllNodes(hasTestTag("tabs")).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithTag("tabs").performScrollToIndex(index)
-        }
-        compose.onAllNodes(hasTextExactly(title) and hasClickAction()).onFirst().performClick()
-        compose.waitForIdle()
-    }
+class HushDeviceTest : HushTestBase() {
 
     @Test
     fun tappingASongPlaysIt() {
         shot("01-albums")
-        openTab(1, "Songs")
+        openSection("Songs")
         shot("02-songs")
-        compose.onNodeWithText("Hush Test One").performClick()
-        compose.waitUntil(15_000) { model.player.isPlaying }
+        tap(songRow("Hush Test One"))
+        waitPlaying("Hush Test One")
         // Keep playing for a while: a crash during playback would end the test here.
         Thread.sleep(4000)
         assertTrue("still playing", model.player.isPlaying)
-        assertEquals("Hush Test One", model.library.song(model.player.currentId)?.title)
+        assertEquals("Hush Test One", currentTitle())
         shot("03-playing")
 
-        compose.onNodeWithTag("miniPlayer").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasContentDescription("Up Next")).fetchSemanticsNodes().isNotEmpty() }
+        openNowPlaying()
         shot("04-player")
         // Every control has to fit on screen, on the cover screen too.
-        for (control in listOf("Shuffle", "Repeat", "Previous", "Next", "Close")) {
-            compose.onNodeWithContentDescription(control).assertIsDisplayed()
+        for (control in listOf("Shuffle", "Repeat", "Previous", "Next", "Close", "Up Next", "Position")) {
+            node(desc(control)).assertIsDisplayed()
         }
         val first = model.player.currentId
-        compose.onNodeWithContentDescription("Next").performClick()
-        compose.waitUntil(10_000) { model.player.currentId != first }
-        compose.onAllNodes(hasContentDescription("Pause")).onLast().performClick()
-        compose.waitUntil(5_000) { !model.player.isPlaying }
-        compose.onNodeWithContentDescription("Up Next").performClick()
+        tap(desc("Next"))
+        waitUntil("the next song") { model.player.currentId != first }
+        playerPlayPause().performClick()
+        waitUntil("a pause") { !model.player.isPlaying }
+        tap(desc("Up Next"))
         shot("05-up-next")
     }
 
     @Test
     fun albumAndArtistPagesPlay() {
-        openTab(1, "Songs")
-        compose.onNodeWithText("Hush Test Two").performTouchInput { longClick() }
-        compose.onNodeWithText("Go to Album").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Shuffle")).fetchSemanticsNodes().isNotEmpty() }
+        openAlbumOf("Hush Test Two")
         shot("06-album")
-        compose.onNodeWithText("Play").performClick()
-        compose.waitUntil(15_000) { model.player.isPlaying }
-        assertEquals("Hush Test One", model.library.song(model.player.currentId)?.title)
-        compose.onNodeWithText("Shuffle").performClick()
-        compose.waitUntil(15_000) { model.player.isPlaying && model.player.shuffled }
+        tap(button("Play"))
+        waitPlaying("Hush Test One")
+        tap(button("Shuffle"))
+        waitUntil("shuffled playback", 15_000) { model.player.isPlaying && model.player.shuffled }
         Thread.sleep(2000)
 
-        compose.onNode(hasTextExactly("Hush Test Artist") and hasClickAction()).performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("3 songs", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        tap(button("Hush Test Artist") and hasTestTag("miniPlayer").not())
+        waitDisplayed(hasText("3 songs", substring = true))
         shot("07-artist")
         // "Hush Test Artist & Guest Singer" credits both singers.
         assertTrue(model.library.artists.any { it.name == "Guest Singer" })
@@ -157,44 +90,30 @@ class HushDeviceTest {
         assertEquals(listOf("Hush Test Three", "Hush Test One", "Hush Test Two"), matched)
     }
 
-    /** The folder picker can't be driven in a test, so the test video is copied into a plain folder Hush may read. */
-    private fun useTestVideosFolder() {
-        val app = compose.activity.applicationContext
-        val dir = File(app.filesDir, "test-videos").apply { mkdirs() }
-        val target = File(dir, "Hush Test Artist - Hush Test Video.mp4")
-        if (!target.exists()) {
-            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-            val pipe = automation.executeShellCommand("cat '/sdcard/Music Videos/Hush Test Artist - Hush Test Video.mp4'")
-            ParcelFileDescriptor.AutoCloseInputStream(pipe).use { input -> target.outputStream().use { input.copyTo(it) } }
-        }
-        compose.runOnUiThread { model.setVideosFolder(Uri.fromFile(dir)) }
-        compose.waitUntil(20_000) { model.library.videos.isNotEmpty() && !model.refreshing }
-    }
-
     private fun showVideoControls() {
-        if (compose.onAllNodes(hasContentDescription("Close video")).fetchSemanticsNodes().isEmpty()) {
+        if (!exists(desc("Close video"))) {
             compose.onRoot().performTouchInput { click(Offset(width * 0.1f, height * 0.5f)) }
-            compose.waitUntil(3_000) { compose.onAllNodes(hasContentDescription("Close video")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil("the video controls", 3_000) { exists(desc("Close video")) }
         }
     }
 
     @Test
     fun videosAskForOneFolder() {
-        openTab(4, "Videos")
+        openSection("Videos")
         assertTrue(model.videosFolder == null)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Choose Videos Folder")).fetchSemanticsNodes().isNotEmpty() }
+        waitDisplayed(hasText("Choose Videos Folder"))
         shot("08a-videos-choose-folder")
     }
 
     @Test
     fun playsAMusicVideo() {
         useTestVideosFolder()
-        openTab(4, "Videos")
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Hush Test Video")).fetchSemanticsNodes().isNotEmpty() }
-        assertEquals("Hush Test Artist", model.library.videos.first().artist)
+        openSection("Videos")
+        waitDisplayed(button("Hush Test Video"), 10_000)
+        assertEquals("Hush Test Artist", model.library.videos.first { it.title == "Hush Test Video" }.artist)
         shot("08-videos")
-        compose.onNodeWithText("Hush Test Video").performClick()
-        compose.waitUntil(8_000) { compose.onAllNodes(hasContentDescription("Pause")).fetchSemanticsNodes().isNotEmpty() }
+        tap(button("Hush Test Video"))
+        waitUntil("the video to play", 8_000) { exists(desc("Pause")) }
         assertTrue(compose.onAllNodes(hasText("can't play", substring = true)).fetchSemanticsNodes().isEmpty())
         shot("09-video-playing")
 
@@ -202,28 +121,25 @@ class HushDeviceTest {
         for (label in listOf("Fill", "Stretch", "16:9", "4:3", "Original Size", "Best Fit")) {
             showVideoControls()
             compose.onNode(hasContentDescription("Picture:", substring = true)).performClick()
-            compose.waitUntil(3_000) { compose.onAllNodes(hasContentDescription("Picture: $label")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil("picture mode $label", 3_000) { exists(desc("Picture: $label")) }
             if (label == "Fill" || label == "Stretch") shot("09-video-$label")
         }
 
         // Turning works whatever the phone's rotation lock says.
         showVideoControls()
         compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
-        compose.waitUntil(3_000) {
-            compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+        waitUntil("landscape", 3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE }
         Thread.sleep(1500)
         shot("09-video-landscape")
         showVideoControls()
         compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
-        compose.waitUntil(3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT }
+        waitUntil("portrait", 3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT }
         showVideoControls()
         compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
-        compose.waitUntil(3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR }
+        waitUntil("auto-rotate", 3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR }
 
         showVideoControls()
-        compose.onNodeWithContentDescription("Close video").performClick()
-        compose.waitForIdle()
+        tap(desc("Close video"))
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, compose.activity.requestedOrientation)
         assertTrue(model.video == null)
         assertFalse(compose.activity.isFinishing)
@@ -231,25 +147,26 @@ class HushDeviceTest {
 
     @Test
     fun searchFindsSongs() {
-        openTab(1, "Songs")
-        compose.onNodeWithContentDescription("Search").performClick()
-        compose.onNode(hasSetTextAction()).performTextInput("three")
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Hush Test One", substring = true)).fetchSemanticsNodes().isEmpty() }
-        assertTrue(compose.onAllNodes(hasText("Hush Test Three", substring = true)).fetchSemanticsNodes().isNotEmpty())
+        openSection("Songs")
+        tap(desc("Search"))
+        node(hasSetTextAction()).performTextInput("three")
+        waitNotDisplayed(text("Hush Test One"))
+        waitDisplayed(hasText("Hush Test Three", substring = true))
         shot("13-search")
-        compose.onNodeWithText("Cancel").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Hush Test One", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        tap(button("Cancel"))
+        waitDisplayed(hasText("Hush Test One", substring = true))
     }
 
     @Test
     fun coversAndPlaylistsTabsShow() {
-        openTab(0, "Albums")
+        openSection("Albums")
         shot("10-albums-grid")
-        openTab(2, "Playlists")
+        openSection("Playlists")
         shot("11-playlists-empty")
-        openTab(3, "Artists")
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Guest Singer")).fetchSemanticsNodes().isNotEmpty() }
+        openSection("Artists")
+        waitDisplayed(text("Guest Singer"))
         shot("12-artists")
-        assertTrue(compose.onAllNodes(hasTestTag("tabs")).fetchSemanticsNodes().isNotEmpty())
+        // The cover screen has the tab row; the inner screen has the sidebar instead.
+        assertEquals(!wide, exists(hasTestTag("tabs")))
     }
 }
