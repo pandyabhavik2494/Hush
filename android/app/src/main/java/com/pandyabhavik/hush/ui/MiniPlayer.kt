@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -56,6 +57,7 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     Box(modifier.padding(horizontal = 12.dp)) {
         Box(
             Modifier
+                .testTag("miniPlayer")
                 .fillMaxWidth()
                 .height(64.dp)
                 .clip(shape)

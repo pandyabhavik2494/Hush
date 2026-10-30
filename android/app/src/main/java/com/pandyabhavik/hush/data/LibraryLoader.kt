@@ -12,7 +12,44 @@ object LibraryLoader {
         val albums = buildAlbums(songs)
         val artists = buildArtists(albums)
         val playlists = playlistsFolder?.let { PlaylistFiles.load(context, it, songs) } ?: emptyList()
-        return Library(songs, albums, artists, playlists)
+        val videos = runCatching { loadVideos(context) }.getOrDefault(emptyList())
+        return Library(videos, songs, albums, artists, playlists)
+    }
+
+    /** Videos in any folder named "Music Videos" (camera clips and other videos stay out). */
+    private fun loadVideos(context: Context): List<Video> {
+        val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.ARTIST,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.DISPLAY_NAME,
+        )
+        val videos = ArrayList<Video>()
+        context.contentResolver.query(
+            collection, projection, "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?", arrayOf("%Music Videos/%"), null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val fileName = c.getString(4) ?: ""
+                // iTunes names files "Artist - Title" or just "Title"; tags win when present.
+                val title = c.getString(1)?.takeIf { it.isNotBlank() && it != fileName.substringBeforeLast('.') }
+                    ?: fileName.substringBeforeLast('.').substringAfter(" - ")
+                val artist = c.getString(2).cleanTag()
+                    ?: fileName.substringBeforeLast('.').takeIf { it.contains(" - ") }?.substringBefore(" - ")
+                videos += Video(
+                    id = id,
+                    uri = ContentUris.withAppendedId(collection, id),
+                    title = title,
+                    artist = artist,
+                    durationMs = c.getLong(3),
+                    searchKey = LibrarySearch.key(title, artist),
+                    letter = LibraryAlphabet.section(title),
+                )
+            }
+        }
+        return videos.sortedWith(compareBy(LibraryAlphabet.comparator) { it.title })
     }
 
     private fun loadSongs(context: Context): List<Song> {

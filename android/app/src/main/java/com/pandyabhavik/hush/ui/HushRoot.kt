@@ -107,8 +107,9 @@ private fun Main(model: HushModel) {
     val stack = remember { mutableStateListOf<Route>() }
     var playerOpen by rememberSaveable { mutableStateOf(false) }
     var about by remember { mutableStateOf(false) }
+    var video by remember { mutableStateOf<com.pandyabhavik.hush.data.Video?>(null) }
     val actions = remember(model) {
-        HushActions(model, push = { stack.add(it) }, showPlayer = { playerOpen = it })
+        HushActions(model, push = { stack.add(it) }, showPlayer = { playerOpen = it }, showVideo = { video = it })
     }
     val hasSong = model.library.song(model.player.currentId) != null
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -152,6 +153,8 @@ private fun Main(model: HushModel) {
             ) {
                 NowPlaying(onClose = { playerOpen = false })
             }
+
+            video?.let { VideoPlayer(it, onClose = { video = null }) }
         }
     }
 

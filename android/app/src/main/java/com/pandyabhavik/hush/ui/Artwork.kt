@@ -96,10 +96,10 @@ private fun rememberCover(uri: Uri?, px: Int): ImageBitmap? {
 
 /** A square cover with rounded corners, or a quiet placeholder when there's none. */
 @Composable
-fun Cover(song: Song?, modifier: Modifier = Modifier, radius: Dp = 6.dp, uri: Uri? = song?.uri) {
+fun Cover(song: Song?, modifier: Modifier = Modifier, radius: Dp = 6.dp, uri: Uri? = song?.uri, aspect: Float = 1f) {
     BoxWithConstraints(
         modifier
-            .aspectRatio(1f)
+            .aspectRatio(aspect)
             .clip(RoundedCornerShape(radius))
             .background(Hush.card),
     ) {

@@ -30,7 +30,7 @@ object PlaylistFiles {
             val lines = runCatching {
                 context.contentResolver.openInputStream(file.uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readLines() }
             }.getOrNull() ?: return@mapNotNull null
-            val matched = parse(lines).mapNotNull { matcher.match(it) }
+            val matched = matcher.matchAll(lines)
             if (matched.isEmpty()) return@mapNotNull null
             val covers = ArrayList<Song>()
             val seenAlbums = HashSet<String>()
@@ -105,6 +105,9 @@ object PlaylistFiles {
     private fun components(path: String): List<String> =
         path.replace('\\', '/').split('/').filter { it.isNotEmpty() }.map { normalize(it) }
 
+    /** The phone's songs for the lines of one playlist file, in order (for tests too). */
+    fun match(lines: List<String>, songs: List<Song>): List<Song> = Matcher(songs).matchAll(lines)
+
     private class Matcher(songs: List<Song>) {
         private val byTail3 = HashMap<String, Song>()
         private val byTail2 = HashMap<String, Song>()
@@ -120,6 +123,8 @@ object PlaylistFiles {
                 byInfo.putIfAbsent(LibrarySearch.fold("${song.artist} - ${song.title}"), song)
             }
         }
+
+        fun matchAll(lines: List<String>): List<Song> = parse(lines).mapNotNull { match(it) }
 
         fun match(line: Line): Song? {
             val parts = components(line.path)

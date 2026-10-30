@@ -62,6 +62,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -80,6 +81,7 @@ enum class LibraryTab(val title: String, val placeholder: String) {
     Songs("Songs", "Find a song, artist or album"),
     Playlists("Playlists", "Find a playlist or song"),
     Artists("Artists", "Find an artist or song"),
+    Videos("Videos", "Find a video"),
 }
 
 enum class LibrarySort(val label: String) {
@@ -87,7 +89,11 @@ enum class LibrarySort(val label: String) {
 
     companion object {
         fun options(tab: LibraryTab) =
-            if (tab == LibraryTab.Artists) listOf(Favorites, MostSongs, Alphabetical, MostPlayed) else listOf(Alphabetical, MostPlayed)
+            when (tab) {
+                LibraryTab.Artists -> listOf(Favorites, MostSongs, Alphabetical, MostPlayed)
+                LibraryTab.Videos -> emptyList()
+                else -> listOf(Alphabetical, MostPlayed)
+            }
     }
 }
 
@@ -120,6 +126,7 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
         LibraryTab.Albums to rememberLazyGridState(),
         LibraryTab.Playlists to rememberLazyGridState(),
         LibraryTab.Artists to rememberLazyGridState(),
+        LibraryTab.Videos to rememberLazyGridState(),
     )
     val songsState = rememberLazyListState()
     val scrolled by remember {
@@ -221,6 +228,7 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
                         folderPicker.launch(null)
                     }
                     LibraryTab.Artists -> ArtistsTab(model, query, artistSort, gridStates.getValue(LibraryTab.Artists), padding)
+                    LibraryTab.Videos -> VideosTab(model, query, gridStates.getValue(LibraryTab.Videos), padding)
                 }
             }
         }
@@ -233,7 +241,7 @@ private fun TabsRow(tabs: List<LibraryTab>, selected: Int, onSelect: (Int) -> Un
     LaunchedEffect(selected) { state.animateScrollToItem((selected - 1).coerceAtLeast(0)) }
     LazyRow(
         state = state,
-        modifier = Modifier.fillMaxWidth().height(58.dp),
+        modifier = Modifier.fillMaxWidth().height(58.dp).testTag("tabs"),
         contentPadding = PaddingValues(horizontal = Hush.sideMargin),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -301,7 +309,7 @@ private fun EmptyMessage(title: String, detail: String, action: Pair<String, () 
 }
 
 @Composable
-private fun Grid(
+fun LibraryGrid(
     state: LazyGridState,
     columns: Int,
     padding: PaddingValues,
@@ -344,7 +352,7 @@ private fun AlbumsTab(model: HushModel, query: String, sort: LibrarySort, showTi
     val actions = LocalActions.current
     BoxWithConstraints {
         val targets = if (sort == LibrarySort.Alphabetical && query.isEmpty()) letterTargets(albums, Album::letter) else emptyList()
-        Grid(state, gridColumns(maxWidth), padding, targets, rowSpacing = if (showTitles) 22.dp else 14.dp) {
+        LibraryGrid(state, gridColumns(maxWidth), padding, targets, rowSpacing = if (showTitles) 22.dp else 14.dp) {
             itemsIndexed(albums, key = { _, a -> a.key }) { _, album ->
                 Tile(onClick = { actions.open(Route.AlbumPage(album.key)) }, menuSongs = album.songs,
                     title = album.title.takeIf { showTitles }, subtitle = album.artist) {
@@ -384,7 +392,7 @@ private fun PlaylistsTab(
     val actions = LocalActions.current
     BoxWithConstraints {
         val targets = if (sort == LibrarySort.Alphabetical && query.isEmpty()) letterTargets(playlists, Playlist::letter) else emptyList()
-        Grid(state, gridColumns(maxWidth), padding, targets, rowSpacing = if (showTitles) 22.dp else 14.dp) {
+        LibraryGrid(state, gridColumns(maxWidth), padding, targets, rowSpacing = if (showTitles) 22.dp else 14.dp) {
             itemsIndexed(playlists, key = { _, p -> p.id }) { _, playlist ->
                 Tile(onClick = { actions.open(Route.PlaylistPage(playlist.id)) }, menuSongs = playlist.songs,
                     title = playlist.name.takeIf { showTitles }, subtitle = "${playlist.songs.size} songs") {
@@ -424,7 +432,7 @@ private fun ArtistsTab(model: HushModel, query: String, sort: LibrarySort, state
     val actions = LocalActions.current
     BoxWithConstraints {
         val targets = if (sort == LibrarySort.Alphabetical && query.isEmpty()) letterTargets(artists, Artist::letter) else emptyList()
-        Grid(state, gridColumns(maxWidth, artists = true), padding, targets, spacing = 16.dp, rowSpacing = 20.dp) {
+        LibraryGrid(state, gridColumns(maxWidth, artists = true), padding, targets, spacing = 16.dp, rowSpacing = 20.dp) {
             itemsIndexed(artists, key = { _, a -> a.id }) { _, artist ->
                 Column(
                     Modifier.clickableQuiet { actions.open(Route.ArtistPage(artist.id)) },

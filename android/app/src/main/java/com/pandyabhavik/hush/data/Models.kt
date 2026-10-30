@@ -71,7 +71,19 @@ data class Playlist(
     val durationMs: Long get() = songs.sumOf { it.durationMs }
 }
 
+/** A music video kept on the phone (in a "Music Videos" folder). */
+data class Video(
+    val id: Long,
+    val uri: Uri,
+    val title: String,
+    val artist: String?,
+    val durationMs: Long,
+    val searchKey: String,
+    val letter: String,
+)
+
 data class Library(
+    val videos: List<Video> = emptyList(),
     val songs: List<Song> = emptyList(),
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),

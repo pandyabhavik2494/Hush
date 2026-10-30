@@ -65,7 +65,10 @@ class HushActions(
     val model: HushModel,
     private val push: (Route) -> Unit,
     private val showPlayer: (Boolean) -> Unit,
+    private val showVideo: (com.pandyabhavik.hush.data.Video?) -> Unit,
 ) {
+    fun playVideo(video: com.pandyabhavik.hush.data.Video) = showVideo(video)
+
     fun open(route: Route) {
         showPlayer(false)
         push(route)
