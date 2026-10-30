@@ -29,8 +29,8 @@ object VideoFolder {
         val fresh = JSONObject()
         val videos = entries.map { entry ->
             val key = "${entry.uri}|${entry.size}|${entry.modified}"
-            val info = old.optJSONObject(key) ?: read(context, entry.uri)
-            fresh.put(key, info)
+            val info = old.optJSONObject(key) ?: read(context, entry.uri)?.also { fresh.put(key, it) } ?: JSONObject()
+            if (old.has(key)) fresh.put(key, info)
             val base = entry.name.substringBeforeLast('.')
             val title = info.optString("title").takeIf { it.isNotBlank() && it != base } ?: base.substringAfter(" - ")
             val artist = info.optString("artist").trim().takeIf { it.isNotEmpty() && it != "<unknown>" }
@@ -49,20 +49,22 @@ object VideoFolder {
         return videos.sortedWith(compareBy(LibraryAlphabet.comparator) { it.title })
     }
 
-    private fun read(context: Context, uri: Uri): JSONObject {
+    /** The video's length and tags, or null if it couldn't be read this time (it's tried again next time). */
+    private fun read(context: Context, uri: Uri): JSONObject? {
         val info = JSONObject()
         val retriever = MediaMetadataRetriever()
-        try {
+        return try {
             retriever.setDataSource(context, uri)
             info.put("duration", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L)
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.let { info.put("title", it) }
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.let { info.put("artist", it) }
+            info
         } catch (_: Exception) {
-            // Unreadable (or copy-protected) files still show, by file name.
+            // Unreadable files still show, by file name.
+            null
         } finally {
             runCatching { retriever.release() }
         }
-        return info
     }
 
     private fun isVideo(name: String) = !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions

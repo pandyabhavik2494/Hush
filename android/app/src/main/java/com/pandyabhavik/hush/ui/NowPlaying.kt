@@ -236,8 +236,12 @@ private fun Scrubber() {
 
 /** A thin line to drag or tap, with the time so far and the time left beneath. */
 @Composable
-fun SeekBar(positionMs: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+fun SeekBar(
+    positionMs: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier,
+    onScrubbing: (Boolean) -> Unit = {},
+) {
     val seek by rememberUpdatedState(onSeek)
+    val scrubbingChanged by rememberUpdatedState(onScrubbing)
     var width by remember { mutableFloatStateOf(1f) }
     var scrubbing by remember { mutableStateOf<Float?>(null) }
     val fraction = scrubbing ?: if (duration > 0) (positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
@@ -254,12 +258,16 @@ fun SeekBar(positionMs: Long, duration: Long, onSeek: (Long) -> Unit, modifier: 
                 }
                 .pointerInput(duration) {
                     detectHorizontalDragGestures(
-                        onDragStart = { scrubbing = (it.x / width).coerceIn(0f, 1f) },
+                        onDragStart = {
+                            scrubbing = (it.x / width).coerceIn(0f, 1f)
+                            scrubbingChanged(true)
+                        },
                         onDragEnd = {
                             scrubbing?.let { if (duration > 0) seek((it * duration).toLong()) }
                             scrubbing = null
+                            scrubbingChanged(false)
                         },
-                        onDragCancel = { scrubbing = null },
+                        onDragCancel = { scrubbing = null; scrubbingChanged(false) },
                     ) { change, _ ->
                         change.consume()
                         scrubbing = (change.position.x / width).coerceIn(0f, 1f)

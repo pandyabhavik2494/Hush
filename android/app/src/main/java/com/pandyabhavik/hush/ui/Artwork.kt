@@ -43,6 +43,8 @@ import com.pandyabhavik.hush.data.ArtistPhotos
 import com.pandyabhavik.hush.data.Playlist
 import com.pandyabhavik.hush.data.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /** Covers decoded from the songs' embedded artwork, kept in memory while Hush runs. */
@@ -51,6 +53,7 @@ object Covers {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
     private val missing = HashSet<String>()
+    private val frames = Semaphore(2)
 
     /** Sizes are bucketed so a cover is decoded at most a few times. */
     fun bucket(px: Int) = when {
@@ -66,11 +69,16 @@ object Covers {
         val key = "$uri@$size"
         cache.get(key)?.let { return it }
         synchronized(missing) { if (key in missing) return null }
+        if (videoFrame) {
+            // Video decoders are few: read two frames at a time, and don't remember a failure,
+            // which may only mean the decoders were busy.
+            val frame = frames.withPermit { withContext(Dispatchers.IO) { runCatching { frame(context, uri, size) }.getOrNull() } }
+            frame?.let { cache.put(key, it) }
+            return frame
+        }
         val bitmap = withContext(Dispatchers.IO) {
             runCatching {
-                if (videoFrame) {
-                    frame(context, uri, size)
-                } else if (uri.authority == "media") {
+                if (uri.authority == "media") {
                     context.contentResolver.loadThumbnail(uri, Size(size, size), null)
                 } else {
                     ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->

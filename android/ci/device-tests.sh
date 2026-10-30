@@ -11,11 +11,16 @@ status=0
 
 adb wait-for-device
 adb shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
-adb push "$media/Music/." /sdcard/Music/ >/dev/null
+# Shared storage can lag a few seconds behind "boot completed"; wait until it takes files.
+for i in $(seq 60); do adb shell 'mkdir -p /sdcard/Music && touch /sdcard/Music/.ready && rm /sdcard/Music/.ready' 2>/dev/null && break; sleep 2; done
+for i in 1 2 3; do adb push "$media/Music/." /sdcard/Music/ >/dev/null && break; sleep 5; done
 adb shell mkdir -p "'/sdcard/Music Videos'"
-adb push "$media/Music Videos/." "/sdcard/Music Videos/" >/dev/null
-adb shell content call --uri content://media --method scan_volume --arg external_primary || true
-sleep 8
+for i in 1 2 3; do adb push "$media/Music Videos/." "/sdcard/Music Videos/" >/dev/null && break; sleep 5; done
+for i in 1 2 3 4 5 6; do
+  adb shell content call --uri content://media --method scan_volume --arg external_primary >/dev/null || true
+  sleep 5
+  adb shell content query --uri content://media/external/audio/media --projection title | grep -q "Hush Test" && break
+done
 adb shell content query --uri content://media/external/audio/media --projection title:relative_path | head -5
 
 tap_text() {  # taps the first on-screen element whose text is $1

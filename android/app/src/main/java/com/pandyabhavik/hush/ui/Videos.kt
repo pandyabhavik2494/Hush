@@ -73,6 +73,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -101,7 +103,7 @@ fun VideosTab(model: HushModel, query: String, state: LazyGridState, padding: Pa
     val videos = remember(model.library, query) {
         if (query.isEmpty()) model.library.videos else model.library.videos.filter { it.searchKey.contains(query) }
     }
-    if (model.loaded && model.library.videos.isEmpty()) {
+    if (model.loaded && !model.refreshing && model.library.videos.isEmpty()) {
         EmptyMessage(
             "No music videos",
             "Hush found no videos in ${VideoFolder.name(folder)}. Videos copied there show up when you pull down to refresh.",
@@ -181,9 +183,17 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
     var controls by remember { mutableStateOf(true) }
     var poke by remember { mutableIntStateOf(0) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var scrubbing by remember { mutableStateOf(false) }
 
     val player = remember(video.id) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context)
+            // Like music: other sound pauses, and unplugging headphones pauses the video.
+            .setAudioAttributes(
+                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+                true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build().apply {
             setMediaItem(MediaItem.fromUri(video.uri))
             // Back where it was if Android rebuilt the screen while it played.
             if (model.videoResume?.first == video.id) seekTo(model.videoResume!!.second)
@@ -245,8 +255,8 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
         }
     }
     // Controls fade after a few seconds of playing untouched.
-    LaunchedEffect(controls, playing, poke) {
-        if (controls && playing) {
+    LaunchedEffect(controls, playing, poke, scrubbing) {
+        if (controls && playing && !scrubbing) {
             delay(3500)
             controls = false
         }
@@ -260,7 +270,8 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
 
     fun touch() { poke++ }
     fun skip(ms: Long) {
-        player.seekTo((player.currentPosition + ms).coerceIn(0L, player.duration.coerceAtLeast(0L)))
+        val target = (player.currentPosition + ms).coerceAtLeast(0L)
+        player.seekTo(if (player.duration > 0) target.coerceAtMost(player.duration) else target)
         touch()
     }
     fun playPause() {
@@ -324,6 +335,7 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
                 onPlayPause = ::playPause,
                 onSkip = ::skip,
                 onSeek = { player.seekTo(it); position = it; touch() },
+                onScrubbing = { scrubbing = it },
                 onFit = {
                     fit = VideoFit.entries[(fit.ordinal + 1) % VideoFit.entries.size]
                     prefs.putString("videoFit", fit.name)
@@ -360,7 +372,7 @@ fun VideoPlayer(video: Video, onClose: () -> Unit) {
 private fun VideoControls(
     video: Video, playing: Boolean, ended: Boolean, position: Long, duration: Long, fit: VideoFit, turn: VideoTurn,
     onClose: () -> Unit, onPlayPause: () -> Unit, onSkip: (Long) -> Unit, onSeek: (Long) -> Unit,
-    onFit: () -> Unit, onTurn: () -> Unit,
+    onScrubbing: (Boolean) -> Unit, onFit: () -> Unit, onTurn: () -> Unit,
 ) {
     val shade = Color.Black.copy(alpha = 0.55f)
     Box(Modifier.fillMaxSize()) {
@@ -425,7 +437,7 @@ private fun VideoControls(
                 .safeDrawingPadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp),
         ) {
-            SeekBar(position, duration, onSeek)
+            SeekBar(position, duration, onSeek, onScrubbing = onScrubbing)
         }
     }
 }

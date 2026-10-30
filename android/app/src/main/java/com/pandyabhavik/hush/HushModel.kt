@@ -52,11 +52,7 @@ class HushModel(application: Application) : AndroidViewModel(application) {
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             // Songs being copied arrive in bursts; wait for things to settle.
-            loadJob?.cancel()
-            loadJob = viewModelScope.launch {
-                delay(2000)
-                load()
-            }
+            reload(delayMs = 2000)
         }
     }
 
@@ -68,7 +64,21 @@ class HushModel(application: Application) : AndroidViewModel(application) {
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, observer,
             )
         }
-        if (!loaded) viewModelScope.launch { load() }
+        if (!loaded && loadJob == null) reload()
+    }
+
+    /**
+     * Reads the library again. A newer reload replaces one still running, so the last change
+     * (a folder just picked, songs just copied) always wins and an older read never lands on top.
+     */
+    private fun reload(delayMs: Long = 0, forgetMisses: Boolean = false) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            if (delayMs > 0) delay(delayMs)
+            if (forgetMisses) withContext(Dispatchers.IO) { ArtistPhotos.forgetMisses(getApplication()) }
+            load()
+            refreshing = false
+        }
     }
 
     private suspend fun load() {
@@ -82,13 +92,8 @@ class HushModel(application: Application) : AndroidViewModel(application) {
 
     /** Pull to refresh: reread everything and look again for missing artist photos. */
     fun refresh() {
-        if (refreshing) return
         refreshing = true
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { ArtistPhotos.forgetMisses(getApplication()) }
-            load()
-            refreshing = false
-        }
+        reload(forgetMisses = true)
     }
 
     fun refreshPlayCounts() {
@@ -107,6 +112,20 @@ class HushModel(application: Application) : AndroidViewModel(application) {
         swapFolder(videosFolder, uri)
         prefs.videosFolder = uri.toString()
         videosFolder = uri.toString()
+        refresh()
+    }
+
+    /** Stop reading videos from the chosen folder. */
+    fun forgetVideosFolder() {
+        val old = videosFolder ?: return
+        if (playlistsFolder != old && old.startsWith("content:")) {
+            runCatching {
+                getApplication<Application>().contentResolver
+                    .releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        prefs.videosFolder = null
+        videosFolder = null
         refresh()
     }
 

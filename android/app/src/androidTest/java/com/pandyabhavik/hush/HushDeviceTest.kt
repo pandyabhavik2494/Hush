@@ -32,6 +32,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.pandyabhavik.hush.data.PlaylistFiles
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -72,6 +73,12 @@ class HushDeviceTest {
     fun waitForLibrary() {
         compose.waitUntil(30_000) { model.loaded && model.library.songs.size >= 3 }
         compose.waitUntil(15_000) { model.player.currentId != null || compose.activity.isFinishing.not() }
+    }
+
+    /** Tests share the app's settings; leave the videos folder unset for the next one. */
+    @After
+    fun forgetTestVideosFolder() {
+        if (model.videosFolder != null) compose.runOnUiThread { model.forgetVideosFolder() }
     }
 
     private fun openTab(index: Int, title: String) {
@@ -166,10 +173,9 @@ class HushDeviceTest {
     @Test
     fun videosAskForOneFolder() {
         openTab(4, "Videos")
-        if (model.videosFolder == null) {
-            assertTrue(compose.onAllNodes(hasText("Choose Videos Folder")).fetchSemanticsNodes().isNotEmpty())
-            shot("08a-videos-choose-folder")
-        }
+        assertTrue(model.videosFolder == null)
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Choose Videos Folder")).fetchSemanticsNodes().isNotEmpty() }
+        shot("08a-videos-choose-folder")
     }
 
     @Test
