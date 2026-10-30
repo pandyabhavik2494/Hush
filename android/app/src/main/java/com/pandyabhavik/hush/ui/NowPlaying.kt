@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -133,11 +134,16 @@ fun NowPlaying(onClose: () -> Unit) {
                     if (queue) {
                         UpNext(Modifier.fillMaxSize())
                     } else {
+                        // The controls always get their full height; the cover takes what's left,
+                        // so on a short screen (the Fold's cover screen, big text) it shrinks instead
+                        // of pushing shuffle and repeat off the bottom.
                         Column(Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxWidth().padding(horizontal = Hush.sideMargin), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier.weight(1f).fillMaxWidth().padding(horizontal = Hush.sideMargin).padding(bottom = 12.dp),
+                                contentAlignment = Alignment.TopCenter,
+                            ) {
                                 PlayerCover(song)
                             }
-                            Spacer(Modifier.weight(1f))
                             Controls(song, onClose)
                             Spacer(Modifier.height(8.dp))
                         }
@@ -156,7 +162,8 @@ private fun PlayerCover(song: Song) {
     Box(
         Modifier
             .widthIn(max = 560.dp)
-            .fillMaxWidth()
+            // The biggest square that fits the space given, by width or by height.
+            .aspectRatio(1f, matchHeightConstraintsFirst = true)
             .offset { IntOffset((drag * 0.5f).roundToInt(), 0) }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
@@ -173,7 +180,7 @@ private fun PlayerCover(song: Song) {
             .background(Color.Black, RoundedCornerShape(10.dp))
             .padding(1.dp),
     ) {
-        Cover(song, Modifier.fillMaxWidth(), 8.dp)
+        Cover(song, Modifier.fillMaxSize(), 8.dp)
     }
 }
 

@@ -77,6 +77,8 @@ if [ "$screen" = cover-screen ]; then
   echo "== Instrumented tests, phone-sized screen (like the Fold's cover screen) =="
   adb shell wm size 1080x2520
   adb shell wm density 420
+  # Larger text, as many people use on the small screen: nothing should fall off the bottom.
+  adb shell settings put system font_scale 1.15
 else
   echo "== Instrumented tests, the Fold's inner screen size =="
   adb shell wm size 1968x2184

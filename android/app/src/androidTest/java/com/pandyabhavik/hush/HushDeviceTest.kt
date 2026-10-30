@@ -9,6 +9,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onRoot
 import java.io.File
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -103,6 +104,10 @@ class HushDeviceTest {
         compose.onNodeWithTag("miniPlayer").performClick()
         compose.waitUntil(5_000) { compose.onAllNodes(hasContentDescription("Up Next")).fetchSemanticsNodes().isNotEmpty() }
         shot("04-player")
+        // Every control has to fit on screen, on the cover screen too.
+        for (control in listOf("Shuffle", "Repeat", "Previous", "Next", "Close")) {
+            compose.onNodeWithContentDescription(control).assertIsDisplayed()
+        }
         val first = model.player.currentId
         compose.onNodeWithContentDescription("Next").performClick()
         compose.waitUntil(10_000) { model.player.currentId != first }
