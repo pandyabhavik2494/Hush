@@ -41,21 +41,21 @@ jobs:
           HUSH_KEYSTORE_PASSWORD: ${{ secrets.HUSH_KEYSTORE_PASSWORD }}
         run: ./gradlew --no-daemon assembleRelease
 
+      # Signed with this machine's throwaway debug key; the copy Bhavik installs is re-signed with Hush's key.
       - name: Name the app file
-        run: cp app/build/outputs/apk/release/app-release.apk Hush.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Hush-ci.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: Hush-${{ github.run_number }}
-          path: android/Hush.apk
+          path: android/Hush-ci.apk
 
-      # A new release each build, so ".../releases/latest/download/Hush.apk" always gets the newest.
-      - name: Publish the download
+      - name: Publish the build
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-${{ github.run_number }}
           name: Hush for Android (build ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
-          body: "Open this page on your phone and tap Hush.apk to install or update."
-          files: android/Hush.apk
-          make_latest: true
+          body: "Build output for re-signing. Not for installing directly."
+          files: android/Hush-ci.apk
+          prerelease: true
