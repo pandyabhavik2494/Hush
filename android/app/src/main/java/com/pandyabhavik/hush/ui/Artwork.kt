@@ -25,7 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,11 +114,13 @@ object Covers {
 @Composable
 private fun rememberCover(uri: Uri?, px: Int, videoFrame: Boolean): ImageBitmap? {
     val context = LocalContext.current
-    val initial = uri?.let { Covers.cached("$it@${Covers.bucket(px)}") }?.asImageBitmap()
-    val bitmap by produceState(initial, uri, px) {
-        if (uri != null && value == null) value = Covers.load(context, uri, px, videoFrame)?.asImageBitmap()
+    val size = Covers.bucket(px)
+    // Keyed on the cover itself: when the song changes, the old picture must not stay behind.
+    val bitmap = remember(uri, size) { mutableStateOf(uri?.let { Covers.cached("$it@$size") }?.asImageBitmap()) }
+    LaunchedEffect(uri, size) {
+        if (uri != null && bitmap.value == null) bitmap.value = Covers.load(context, uri, px, videoFrame)?.asImageBitmap()
     }
-    return bitmap
+    return bitmap.value
 }
 
 /** A square cover with rounded corners, or a quiet placeholder when there's none. */
@@ -161,11 +165,10 @@ fun PlaylistCover(playlist: Playlist, modifier: Modifier = Modifier, radius: Dp 
 @Composable
 fun ArtistPhoto(artist: Artist, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val photo by produceState<ImageBitmap?>(null, artist.id) {
-        value = ArtistPhotos.photo(context, artist)?.asImageBitmap()
-    }
+    val photo = remember(artist.id) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(artist.id) { photo.value = ArtistPhotos.photo(context, artist)?.asImageBitmap() }
     Box(modifier.aspectRatio(1f).clip(CircleShape).background(Hush.card)) {
-        val image = photo
+        val image = photo.value
         if (image != null) {
             Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else if (artist.cover != null) {
