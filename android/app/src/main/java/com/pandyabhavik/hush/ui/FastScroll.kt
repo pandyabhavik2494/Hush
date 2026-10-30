@@ -54,7 +54,7 @@ fun FastScrollIndex(targets: List<Pair<String, Int>>, modifier: Modifier = Modif
     }
     Column(
         modifier
-            .width(28.dp)
+            .width(32.dp)
             .onSizeChanged { height = it.height.coerceAtLeast(1) }
             .pointerInput(targets) {
                 detectTapGestures(onPress = { pick(it.y); tryAwaitRelease(); active = null })
@@ -72,8 +72,8 @@ fun FastScrollIndex(targets: List<Pair<String, Int>>, modifier: Modifier = Modif
         for ((letter, _) in targets) {
             Text(
                 letter,
-                style = Hush.sans(11.sp, if (letter == active) Hush.ink else Hush.muted, FontWeight.SemiBold),
-                modifier = Modifier.padding(vertical = 1.dp),
+                style = Hush.sans(12.sp, if (letter == active) Hush.ink else Hush.muted, FontWeight.SemiBold),
+                modifier = Modifier.padding(vertical = 1.5.dp),
             )
         }
     }

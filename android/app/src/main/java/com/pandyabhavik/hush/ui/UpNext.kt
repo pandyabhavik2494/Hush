@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -52,7 +54,7 @@ fun UpNext(modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth().padding(start = Hush.sideMargin, end = 8.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Up Next", style = Hush.serif(29.sp), modifier = Modifier.weight(1f))
             if (upNext.isNotEmpty()) {
-                Text("Clear", style = Hush.sans(15.sp, Hush.muted), modifier = Modifier.clickableQuiet { player.clearUpNext() }.padding(12.dp))
+                Text("Clear", style = Hush.sans(16.sp, Hush.muted), modifier = Modifier.clip(RoundedCornerShape(24.dp)).clickableQuiet { player.clearUpNext() }.padding(horizontal = 16.dp, vertical = 14.dp))
             }
         }
         if (upNext.isEmpty()) {
@@ -84,9 +86,9 @@ fun UpNext(modifier: Modifier = Modifier) {
                         Text(song.title, style = Hush.sans(15.sp, weight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(song.artist, style = Hush.sans(13.sp, Hush.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    PlainIconButton(Icons.Rounded.Close, "Remove", tint = Hush.muted, size = 20.dp) { player.removeFromUpNext(index) }
+                    PlainIconButton(Icons.Rounded.Close, "Remove", tint = Hush.muted, size = 22.dp) { player.removeFromUpNext(index) }
                     Box(
-                        Modifier.size(44.dp).pointerInput(index, upNext.size) {
+                        Modifier.size(48.dp).pointerInput(index, upNext.size) {
                             detectVerticalDragGestures(
                                 onDragStart = { dragging = index; dragOffset = 0f },
                                 onDragEnd = {

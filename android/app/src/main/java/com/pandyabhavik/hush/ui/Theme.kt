@@ -23,7 +23,8 @@ object Hush {
     val outline = Color(0xFF3A3936)
     val line = Color(0xFF2E2C28)
 
-    val tapTarget = 44.dp
+    /** Android's minimum comfortable touch target. */
+    val tapTarget = 48.dp
     val tileRadius = 10.dp
     val sideMargin = 20.dp
 

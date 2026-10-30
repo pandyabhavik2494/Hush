@@ -40,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -105,24 +104,24 @@ private fun Welcome(onAllow: () -> Unit) {
 
 @Composable
 private fun Main(model: HushModel) {
-    val stack = remember { mutableStateListOf<Route>() }
-    var playerOpen by rememberSaveable { mutableStateOf(false) }
-    var about by remember { mutableStateOf(false) }
-    var video by remember { mutableStateOf<com.pandyabhavik.hush.data.Video?>(null) }
+    val stack = model.pages
+    val playerOpen = model.playerOpen
+    val video = model.video
+    var about by rememberSaveable { mutableStateOf(false) }
     val actions = remember(model) {
-        HushActions(model, push = { stack.add(it) }, showPlayer = { playerOpen = it }, showVideo = { video = it })
+        HushActions(model, push = { stack.add(it) }, showPlayer = { model.playerOpen = it }, showVideo = { model.video = it })
     }
     val hasSong = model.library.song(model.player.currentId) != null
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomPadding = if (hasSong) 64.dp + 12.dp + navBottom else navBottom
 
-    BackHandler(enabled = stack.isNotEmpty() && !playerOpen) { stack.removeAt(stack.lastIndex) }
+    BackHandler(enabled = stack.isNotEmpty() && !playerOpen && video == null) { stack.removeAt(stack.lastIndex) }
 
     CompositionLocalProvider(LocalActions provides actions) {
         Box(Modifier.fillMaxSize()) {
             // The library stays underneath, so its tabs and scroll positions are kept.
             // Hidden from TalkBack (and tests) while a page or the player covers it.
-            val covered = stack.isNotEmpty() || playerOpen
+            val covered = stack.isNotEmpty() || playerOpen || video != null
             Box(if (covered) Modifier.clearAndSetSemantics { } else Modifier) {
                 LibraryScreen(model, bottomPadding) { about = true }
             }
@@ -147,7 +146,7 @@ private fun Main(model: HushModel) {
                 }
             }
 
-            if (hasSong) {
+            if (hasSong && video == null) {
                 MiniPlayer(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp).fillMaxWidth())
             }
 
@@ -156,10 +155,10 @@ private fun Main(model: HushModel) {
                 enter = slideInVertically(tween(320)) { it },
                 exit = slideOutVertically(tween(260)) { it },
             ) {
-                NowPlaying(onClose = { playerOpen = false })
+                NowPlaying(onClose = { model.playerOpen = false })
             }
 
-            video?.let { VideoPlayer(it, onClose = { video = null }) }
+            video?.let { VideoPlayer(it, onClose = { model.video = null }) }
         }
     }
 

@@ -58,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -145,6 +146,10 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
         if (uri != null) model.setPlaylistsFolder(uri)
     }
 
+    val videosPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) model.setVideosFolder(uri)
+    }
+
     BackHandler(enabled = searching) {
         searching = false
         queryText = ""
@@ -154,7 +159,7 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
         // Header: solid black, nothing shows through.
         Column(Modifier.background(Hush.paper).statusBarsPadding()) {
             Row(
-                Modifier.fillMaxWidth().height(Hush.tapTarget).padding(start = Hush.sideMargin, end = 8.dp),
+                Modifier.fillMaxWidth().height(52.dp).padding(start = Hush.sideMargin, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -203,6 +208,12 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
                                 onClick = { options = false; folderPicker.launch(null) },
                             )
                         }
+                        if (tab == LibraryTab.Videos) {
+                            DropdownMenuItem(
+                                text = { Text("Choose Videos Folder…") },
+                                onClick = { options = false; videosPicker.launch(null) },
+                            )
+                        }
                     }
                 }
             }
@@ -228,7 +239,9 @@ fun LibraryScreen(model: HushModel, bottomPadding: Dp, onAbout: () -> Unit) {
                         folderPicker.launch(null)
                     }
                     LibraryTab.Artists -> ArtistsTab(model, query, artistSort, gridStates.getValue(LibraryTab.Artists), padding)
-                    LibraryTab.Videos -> VideosTab(model, query, gridStates.getValue(LibraryTab.Videos), padding)
+                    LibraryTab.Videos -> VideosTab(model, query, gridStates.getValue(LibraryTab.Videos), padding) {
+                        videosPicker.launch(null)
+                    }
                 }
             }
         }
@@ -266,7 +279,7 @@ private fun SearchField(text: String, placeholder: String, onChange: (String) ->
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.weight(1f).height(40.dp).background(Hush.card, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
+            Modifier.weight(1f).height(44.dp).background(Hush.card, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             if (text.isEmpty()) Text(placeholder, style = Hush.sans(16.sp, Hush.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -281,7 +294,7 @@ private fun SearchField(text: String, placeholder: String, onChange: (String) ->
         Text(
             "Cancel",
             style = Hush.sans(16.sp),
-            modifier = Modifier.padding(start = 4.dp).clickableQuiet {
+            modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(24.dp)).clickableQuiet {
                 focusManager.clearFocus()
                 onCancel()
             }.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -293,7 +306,7 @@ private fun <T> byPlays(items: List<T>, plays: (T) -> Int): List<T> =
     items.withIndex().sortedWith(compareByDescending<IndexedValue<T>> { plays(it.value) }.thenBy { it.index }).map { it.value }
 
 @Composable
-private fun EmptyMessage(title: String, detail: String, action: Pair<String, () -> Unit>? = null) {
+fun EmptyMessage(title: String, detail: String, action: Pair<String, () -> Unit>? = null) {
     Column(
         Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 80.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

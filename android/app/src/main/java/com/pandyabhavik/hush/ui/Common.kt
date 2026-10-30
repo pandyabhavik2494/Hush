@@ -129,7 +129,7 @@ fun SongRow(song: Song, isCurrent: Boolean, isPlaying: Boolean, onClick: () -> U
             }
             if (isCurrent) {
                 Spacer(Modifier.width(12.dp))
-                Equalizer(isPlaying, Modifier.size(14.dp))
+                Equalizer(isPlaying, Modifier.size(16.dp))
             }
         }
         SongMenu(listOf(song), menu, { menu = false }, song = song)
@@ -163,12 +163,12 @@ fun Equalizer(playing: Boolean, modifier: Modifier = Modifier, color: Color = Hu
         )
     }
     val still = listOf(0.45f, 0.8f, 0.6f)
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.5.dp), verticalAlignment = Alignment.Bottom) {
         bars.forEachIndexed { i, bar ->
             Box(
                 Modifier
                     .weight(1f)
-                    .fillMaxHeight(if (playing) bar.value else still[i])
+                    .fillMaxHeight(if (playing) bar.value.coerceAtLeast(0.35f) else still[i])
                     .clip(RoundedCornerShape(1.dp))
                     .background(color),
             )
@@ -191,7 +191,7 @@ fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVec
     val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
-            .height(48.dp)
+            .height(52.dp)
             .clip(shape)
             .then(if (filled) Modifier.background(Hush.ink) else Modifier.border(1.dp, Hush.outline, shape))
             .clickableQuiet(onClick),
@@ -199,22 +199,23 @@ fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVec
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val color = if (filled) Color.Black else Hush.ink
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = Hush.sans(16.sp, color, FontWeight.SemiBold))
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = Hush.sans(17.sp, color, FontWeight.SemiBold))
     }
 }
 
-/** A 44 dp icon button with no ripple circle, like the iPhone's plain buttons. */
+/** A plain icon button: no background, at least 48 dp to touch. */
 @Composable
 fun PlainIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     tint: Color = Hush.ink,
-    size: Dp = 24.dp,
+    size: Dp = 26.dp,
+    box: Dp = Hush.tapTarget,
     onClick: () -> Unit,
 ) {
-    Box(Modifier.size(Hush.tapTarget).clip(RoundedCornerShape(22.dp)).clickableQuiet(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(box).clip(androidx.compose.foundation.shape.CircleShape).clickableQuiet(onClick), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(size))
     }
 }

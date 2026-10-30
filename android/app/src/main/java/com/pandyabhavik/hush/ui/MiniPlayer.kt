@@ -90,7 +90,7 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
                 },
         ) {
             Row(
-                Modifier.fillMaxWidth().fillMaxHeight().offset { IntOffset((drag * 0.4f).roundToInt(), 0) }.padding(start = 10.dp, end = 6.dp),
+                Modifier.fillMaxWidth().fillMaxHeight().offset { IntOffset((drag * 0.4f).roundToInt(), 0) }.padding(start = 10.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Cover(song, Modifier.size(44.dp), 7.dp)
@@ -101,7 +101,7 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
                 PlainIconButton(
                     if (player.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     if (player.isPlaying) "Pause" else "Play",
-                    size = 30.dp,
+                    size = 34.dp, box = 56.dp,
                 ) { player.togglePlayback() }
             }
             // A thin progress line along the bottom edge.

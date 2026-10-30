@@ -16,6 +16,10 @@ class Prefs(context: Context) {
         get() = prefs.getString("playlistsFolder", null)
         set(value) = prefs.edit().putString("playlistsFolder", value).apply()
 
+    var videosFolder: String?
+        get() = prefs.getString("videosFolder", null)
+        set(value) = prefs.edit().putString("videosFolder", value).apply()
+
     fun getString(key: String, default: String): String = prefs.getString(key, default) ?: default
     fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
     fun getBoolean(key: String, default: Boolean): Boolean = prefs.getBoolean(key, default)

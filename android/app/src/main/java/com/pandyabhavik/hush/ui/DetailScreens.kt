@@ -46,7 +46,7 @@ import com.pandyabhavik.hush.data.durationText
 private fun PageBar(onBack: () -> Unit, menu: @Composable (dismiss: () -> Unit) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().background(Hush.paper).statusBarsPadding().padding(horizontal = 8.dp).height(Hush.tapTarget),
+        Modifier.fillMaxWidth().background(Hush.paper).statusBarsPadding().padding(horizontal = 6.dp).height(52.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PlainIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
@@ -169,7 +169,7 @@ private fun TrackRow(song: Song, isCurrent: Boolean, isPlaying: Boolean, onClick
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.width(22.dp), contentAlignment = Alignment.CenterEnd) {
-                if (isCurrent) Equalizer(isPlaying, Modifier.size(14.dp))
+                if (isCurrent) Equalizer(isPlaying, Modifier.size(16.dp))
                 else Text(
                     if (song.track > 0) song.track.toString() else "·",
                     style = Hush.sans(15.sp, Hush.muted).copy(fontFeatureSettings = "tnum"),

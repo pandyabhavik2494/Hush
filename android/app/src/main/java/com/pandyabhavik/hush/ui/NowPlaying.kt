@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -99,12 +102,13 @@ fun NowPlaying(onClose: () -> Unit) {
     ) {
         val wide = maxWidth >= 600.dp && maxWidth > maxHeight * 0.85f
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlainIconButton(Icons.Rounded.KeyboardArrowDown, "Close", size = 32.dp, onClick = onClose)
+            Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                PlainIconButton(Icons.Rounded.KeyboardArrowDown, "Close", size = 36.dp, box = 56.dp, onClick = onClose)
                 Spacer(Modifier.weight(1f))
                 PlainIconButton(
                     Icons.AutoMirrored.Rounded.QueueMusic, "Up Next",
                     tint = if (showQueue) Hush.ink else Hush.muted,
+                    size = 30.dp, box = 56.dp,
                 ) { showQueue = !showQueue }
             }
             if (song == null) {
@@ -191,35 +195,33 @@ private fun Controls(song: Song, onClose: () -> Unit) {
                 modifier = Modifier.weight(1f, fill = false).clickableQuiet { actions.openAlbumOf(song) },
             )
         }
-        Spacer(Modifier.height(24.dp))
-        Scrubber()
         Spacer(Modifier.height(20.dp))
+        Scrubber()
+        Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            PlainIconButton(Icons.Rounded.SkipPrevious, "Previous", size = 30.dp) { player.previous() }
-            Spacer(Modifier.width(48.dp))
+            PlainIconButton(Icons.Rounded.SkipPrevious, "Previous", size = 46.dp, box = 72.dp) { player.previous() }
+            Spacer(Modifier.width(28.dp))
             Box(
-                Modifier.size(76.dp).clip(CircleShape).background(Hush.ink).clickableQuiet { player.togglePlayback() },
+                Modifier.size(84.dp).clip(CircleShape).background(Hush.ink).clickableQuiet { player.togglePlayback() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     if (player.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription = if (player.isPlaying) "Pause" else "Play",
-                    tint = Color.Black, modifier = Modifier.size(38.dp),
+                    tint = Color.Black, modifier = Modifier.size(46.dp),
                 )
             }
-            Spacer(Modifier.width(48.dp))
-            PlainIconButton(Icons.Rounded.SkipNext, "Next", size = 30.dp) { player.next() }
+            Spacer(Modifier.width(28.dp))
+            PlainIconButton(Icons.Rounded.SkipNext, "Next", size = 46.dp, box = 72.dp) { player.next() }
         }
-        Spacer(Modifier.height(16.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PlainIconButton(Icons.Rounded.Shuffle, "Shuffle", tint = if (player.shuffled) Hush.ink else Hush.iconOff) {
-                player.toggleShuffle()
-            }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            ToggleButton(Icons.Rounded.Shuffle, "Shuffle", on = player.shuffled) { player.toggleShuffle() }
             Spacer(Modifier.weight(1f))
-            PlainIconButton(
+            ToggleButton(
                 if (player.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                 "Repeat",
-                tint = if (player.repeatMode == Player.REPEAT_MODE_OFF) Hush.iconOff else Hush.ink,
+                on = player.repeatMode != Player.REPEAT_MODE_OFF,
             ) { player.cycleRepeat() }
         }
     }
@@ -229,26 +231,32 @@ private fun Controls(song: Song, onClose: () -> Unit) {
 @Composable
 private fun Scrubber() {
     val player = LocalActions.current.model.player
+    SeekBar(player.positionMs, player.durationMs, player::seek)
+}
+
+/** A thin line to drag or tap, with the time so far and the time left beneath. */
+@Composable
+fun SeekBar(positionMs: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+    val seek by rememberUpdatedState(onSeek)
     var width by remember { mutableFloatStateOf(1f) }
     var scrubbing by remember { mutableStateOf<Float?>(null) }
-    val duration = player.durationMs
-    val fraction = scrubbing ?: if (duration > 0) (player.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
-    Column {
+    val fraction = scrubbing ?: if (duration > 0) (positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    Column(modifier) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(28.dp)
+                .height(36.dp)
                 .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
                 .pointerInput(duration) {
                     detectTapGestures { offset ->
-                        if (duration > 0) player.seek(((offset.x / width).coerceIn(0f, 1f) * duration).toLong())
+                        if (duration > 0) seek(((offset.x / width).coerceIn(0f, 1f) * duration).toLong())
                     }
                 }
                 .pointerInput(duration) {
                     detectHorizontalDragGestures(
                         onDragStart = { scrubbing = (it.x / width).coerceIn(0f, 1f) },
                         onDragEnd = {
-                            scrubbing?.let { if (duration > 0) player.seek((it * duration).toLong()) }
+                            scrubbing?.let { if (duration > 0) seek((it * duration).toLong()) }
                             scrubbing = null
                         },
                         onDragCancel = { scrubbing = null },
@@ -264,9 +272,22 @@ private fun Scrubber() {
             Box(Modifier.fillMaxWidth(fraction).height(thickness).clip(RoundedCornerShape(2.dp)).background(Hush.ink))
         }
         Row(Modifier.fillMaxWidth()) {
-            Text(timeText((fraction * duration).toLong()), style = Hush.sans(12.sp, Hush.muted))
+            Text(timeText((fraction * duration).toLong()), style = Hush.sans(13.sp, Hush.muted).copy(fontFeatureSettings = "tnum"))
             Spacer(Modifier.weight(1f))
-            Text("-" + timeText(duration - (fraction * duration).toLong()), style = Hush.sans(12.sp, Hush.muted))
+            Text("-" + timeText(duration - (fraction * duration).toLong()), style = Hush.sans(13.sp, Hush.muted).copy(fontFeatureSettings = "tnum"))
         }
+    }
+}
+
+/** Shuffle and repeat: a big target, ink when on with a small dot beneath, grey when off. */
+@Composable
+private fun ToggleButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, on: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(60.dp).clip(CircleShape).clickableQuiet(onClick)
+            .semantics { stateDescription = if (on) "On" else "Off" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = if (on) Hush.ink else Hush.iconOff, modifier = Modifier.size(30.dp))
+        if (on) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp).size(4.dp).clip(CircleShape).background(Hush.ink))
     }
 }

@@ -40,7 +40,7 @@ PY
 echo "== Smoke test of the release APK =="
 adb logcat -c
 adb install -r "$apk"
-for p in READ_MEDIA_AUDIO READ_MEDIA_VIDEO POST_NOTIFICATIONS; do adb shell pm grant com.pandyabhavik.hush android.permission.$p; done
+for p in READ_MEDIA_AUDIO POST_NOTIFICATIONS; do adb shell pm grant com.pandyabhavik.hush android.permission.$p; done
 adb shell am start -W -n com.pandyabhavik.hush/.MainActivity
 sleep 6
 adb exec-out screencap -p > "$results/release-1-launch.png"

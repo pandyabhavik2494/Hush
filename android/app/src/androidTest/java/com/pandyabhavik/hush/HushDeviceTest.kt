@@ -1,6 +1,13 @@
 package com.pandyabhavik.hush
 
 import android.Manifest
+import android.content.pm.ActivityInfo
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onRoot
+import java.io.File
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -43,7 +50,6 @@ class HushDeviceTest {
     @get:Rule(order = 0)
     val permissions: GrantPermissionRule = GrantPermissionRule.grant(
         Manifest.permission.READ_MEDIA_AUDIO,
-        Manifest.permission.READ_MEDIA_VIDEO,
         Manifest.permission.POST_NOTIFICATIONS,
     )
 
@@ -136,17 +142,76 @@ class HushDeviceTest {
         assertEquals(listOf("Hush Test Three", "Hush Test One", "Hush Test Two"), matched)
     }
 
+    /** The folder picker can't be driven in a test, so the test video is copied into a plain folder Hush may read. */
+    private fun useTestVideosFolder() {
+        val app = compose.activity.applicationContext
+        val dir = File(app.filesDir, "test-videos").apply { mkdirs() }
+        val target = File(dir, "Hush Test Artist - Hush Test Video.mp4")
+        if (!target.exists()) {
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            val pipe = automation.executeShellCommand("cat '/sdcard/Music Videos/Hush Test Artist - Hush Test Video.mp4'")
+            ParcelFileDescriptor.AutoCloseInputStream(pipe).use { input -> target.outputStream().use { input.copyTo(it) } }
+        }
+        compose.runOnUiThread { model.setVideosFolder(Uri.fromFile(dir)) }
+        compose.waitUntil(20_000) { model.library.videos.isNotEmpty() && !model.refreshing }
+    }
+
+    private fun showVideoControls() {
+        if (compose.onAllNodes(hasContentDescription("Close video")).fetchSemanticsNodes().isEmpty()) {
+            compose.onRoot().performTouchInput { click(Offset(width * 0.1f, height * 0.5f)) }
+            compose.waitUntil(3_000) { compose.onAllNodes(hasContentDescription("Close video")).fetchSemanticsNodes().isNotEmpty() }
+        }
+    }
+
+    @Test
+    fun videosAskForOneFolder() {
+        openTab(4, "Videos")
+        if (model.videosFolder == null) {
+            assertTrue(compose.onAllNodes(hasText("Choose Videos Folder")).fetchSemanticsNodes().isNotEmpty())
+            shot("08a-videos-choose-folder")
+        }
+    }
+
     @Test
     fun playsAMusicVideo() {
+        useTestVideosFolder()
         openTab(4, "Videos")
         compose.waitUntil(10_000) { compose.onAllNodes(hasText("Hush Test Video")).fetchSemanticsNodes().isNotEmpty() }
+        assertEquals("Hush Test Artist", model.library.videos.first().artist)
         shot("08-videos")
         compose.onNodeWithText("Hush Test Video").performClick()
-        Thread.sleep(4000)
+        compose.waitUntil(8_000) { compose.onAllNodes(hasContentDescription("Pause")).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(compose.onAllNodes(hasText("can't play", substring = true)).fetchSemanticsNodes().isEmpty())
         shot("09-video-playing")
+
+        // The picture modes, in turn, like VLC.
+        for (label in listOf("Fill", "Stretch", "16:9", "4:3", "Original Size", "Best Fit")) {
+            showVideoControls()
+            compose.onNode(hasContentDescription("Picture:", substring = true)).performClick()
+            compose.waitUntil(3_000) { compose.onAllNodes(hasContentDescription("Picture: $label")).fetchSemanticsNodes().isNotEmpty() }
+            if (label == "Fill" || label == "Stretch") shot("09-video-$label")
+        }
+
+        // Turning works whatever the phone's rotation lock says.
+        showVideoControls()
+        compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
+        compose.waitUntil(3_000) {
+            compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        Thread.sleep(1500)
+        shot("09-video-landscape")
+        showVideoControls()
+        compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
+        compose.waitUntil(3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT }
+        showVideoControls()
+        compose.onNode(hasContentDescription("Turn:", substring = true)).performClick()
+        compose.waitUntil(3_000) { compose.activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR }
+
+        showVideoControls()
         compose.onNodeWithContentDescription("Close video").performClick()
         compose.waitForIdle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, compose.activity.requestedOrientation)
+        assertTrue(model.video == null)
         assertFalse(compose.activity.isFinishing)
     }
 

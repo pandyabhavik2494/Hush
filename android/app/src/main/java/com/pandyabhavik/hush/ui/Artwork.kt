@@ -3,6 +3,7 @@ package com.pandyabhavik.hush.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.LruCache
 import android.util.Size
@@ -60,14 +61,16 @@ object Covers {
 
     fun cached(key: String): Bitmap? = cache.get(key)
 
-    suspend fun load(context: Context, uri: Uri, px: Int): Bitmap? {
+    suspend fun load(context: Context, uri: Uri, px: Int, videoFrame: Boolean = false): Bitmap? {
         val size = bucket(px)
         val key = "$uri@$size"
         cache.get(key)?.let { return it }
         synchronized(missing) { if (key in missing) return null }
         val bitmap = withContext(Dispatchers.IO) {
             runCatching {
-                if (uri.authority == "media") {
+                if (videoFrame) {
+                    frame(context, uri, size)
+                } else if (uri.authority == "media") {
                     context.contentResolver.loadThumbnail(uri, Size(size, size), null)
                 } else {
                     ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
@@ -81,22 +84,38 @@ object Covers {
         return bitmap
     }
 
+    /** A frame a little way in (music videos often open on black), scaled to fit [size]. */
+    private fun frame(context: Context, uri: Uri, size: Int): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val atUs = minOf(duration / 4, 30_000L) * 1000
+            retriever.getScaledFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size, size)
+                ?: retriever.embeddedPicture?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
     fun forgetMisses() = synchronized(missing) { missing.clear() }
 }
 
 @Composable
-private fun rememberCover(uri: Uri?, px: Int): ImageBitmap? {
+private fun rememberCover(uri: Uri?, px: Int, videoFrame: Boolean): ImageBitmap? {
     val context = LocalContext.current
     val initial = uri?.let { Covers.cached("$it@${Covers.bucket(px)}") }?.asImageBitmap()
     val bitmap by produceState(initial, uri, px) {
-        if (uri != null && value == null) value = Covers.load(context, uri, px)?.asImageBitmap()
+        if (uri != null && value == null) value = Covers.load(context, uri, px, videoFrame)?.asImageBitmap()
     }
     return bitmap
 }
 
 /** A square cover with rounded corners, or a quiet placeholder when there's none. */
 @Composable
-fun Cover(song: Song?, modifier: Modifier = Modifier, radius: Dp = 6.dp, uri: Uri? = song?.uri, aspect: Float = 1f) {
+fun Cover(
+    song: Song?, modifier: Modifier = Modifier, radius: Dp = 6.dp, uri: Uri? = song?.uri, aspect: Float = 1f, videoFrame: Boolean = false,
+) {
     BoxWithConstraints(
         modifier
             .aspectRatio(aspect)
@@ -104,7 +123,7 @@ fun Cover(song: Song?, modifier: Modifier = Modifier, radius: Dp = 6.dp, uri: Ur
             .background(Hush.card),
     ) {
         val px = with(LocalDensity.current) { maxWidth.roundToPx() }
-        val bitmap = rememberCover(uri, px)
+        val bitmap = rememberCover(uri, px, videoFrame)
         if (bitmap != null) {
             Image(bitmap, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
