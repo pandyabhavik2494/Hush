@@ -891,6 +891,9 @@ final class MusicLibraryStore: ObservableObject {
                 guard let self, generation == self.playbackStartGeneration else { return }
                 self.player.pause()
             }
+        } else if player.nowPlayingItem == nil, let first = queue.entries.first {
+            // The queue played to its end: Play starts it again from the top (as on Android).
+            play(first.item, from: queue.entries.map(\.item), playlistID: nowPlayingPlaylistID, source: playbackSource)
         } else if currentItem != nil || player.nowPlayingItem != nil {
             isPlaying = true
             expect(isPlaying: true)

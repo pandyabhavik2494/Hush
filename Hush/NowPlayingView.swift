@@ -3,6 +3,11 @@ import MediaPlayer
 import SwiftUI
 import UIKit
 
+/// The player, as on Hush for Android: the background drifts slowly in the cover's own colours, the
+/// cover sits framed with a soft shadow and sinks a little while paused, the title and artist sit
+/// left with a "…" menu, then the scrubber, the transport, and shuffle / Up Next / repeat. The cover
+/// gets whatever height the controls leave, so nothing falls off a short phone or at large text
+/// sizes. Swipe the cover sideways to change songs, swipe down to close.
 struct NowPlayingView: View {
     @EnvironmentObject private var library: MusicLibraryStore
     @EnvironmentObject private var playback: PlaybackStatus
@@ -24,58 +29,53 @@ struct NowPlayingView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let layout = PlayerArtLayout(
-                width: geometry.size.width,
-                height: geometry.size.height,
-                topInset: geometry.safeAreaInsets.top,
-                bottomInset: geometry.safeAreaInsets.bottom
-            )
+        VStack(spacing: 0) {
+            topBar
+                .padding(.horizontal, 6)
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    topBar
-                        .padding(.horizontal, 8)
-
-                    // The cover is drawn behind everything (NowPlayingBackdrop). This keeps its
-                    // place, so the title starts just below it.
-                    Color.clear
-                        .frame(height: layout.titleGap)
-
-                    trackInformation
-                        .padding(.horizontal, 24)
-
-                    Spacer(minLength: 20)
-
-                    TimelineView(.animation(minimumInterval: 1.0 / 4.0, paused: !playback.isPlaying)) { _ in
-                        PlaybackScrubber(
-                            duration: duration,
-                            position: library.currentPlaybackTime,
-                            isPlaying: playback.isPlaying,
-                            onSeek: library.seek(to:)
-                        )
-                    }
-                    .padding(.horizontal, 24)
-
-                    Spacer(minLength: 16)
-
-                    transportControls
-
-                    Spacer(minLength: 16)
-
-                    modeControls
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                }
-                .frame(maxWidth: .infinity, minHeight: max(geometry.size.height, 0))
+            // The cover gets the height the controls leave (never the other way round).
+            GeometryReader { geometry in
+                let side = max(min(geometry.size.width, geometry.size.height), 0)
+                PlayerCover(
+                    item: library.currentItem,
+                    side: side,
+                    isPlaying: playback.isPlaying,
+                    onNext: library.skipForward,
+                    onPrevious: library.skipBack
+                )
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
-            // Only scrolls when the content doesn't fit (small phones / large text), so a downward
-            // swipe goes to the close gesture instead of rubber-banding the page.
-            .scrollBounceBehavior(.basedOnSize)
-            .background { NowPlayingBackdrop(item: library.currentItem, layout: layout) }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 6)
+
+            trackInformation
+                .padding(.leading, 24)
+                .padding(.trailing, 12)
+                .padding(.top, 18)
+
+            TimelineView(.animation(minimumInterval: 1.0 / 4.0, paused: !playback.isPlaying)) { _ in
+                PlaybackScrubber(
+                    duration: duration,
+                    position: library.currentPlaybackTime,
+                    isPlaying: playback.isPlaying,
+                    onSeek: library.seek(to:)
+                )
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+
+            transportControls
+                .padding(.top, 8)
+
+            modeControls
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { CoverColorBackdrop(item: library.currentItem).ignoresSafeArea() }
         .toolbar(.hidden, for: .navigationBar)
-        .tint(HushStyle.accent)
+        .tint(PlayerInk.cream)
         .sheet(isPresented: $showingQueue) {
             UpNextView()
                 .environmentObject(library)
@@ -87,28 +87,31 @@ struct NowPlayingView: View {
         }
     }
 
+    /// Close at the left, a grabber in the middle (the player swipes down to close).
     private var topBar: some View {
-        HStack {
-            Button {
-                onMinimize()
-            } label: {
-                BarIcon(systemName: "chevron.down")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to library")
+        ZStack {
+            Capsule()
+                .fill(PlayerInk.cream.opacity(0.3))
+                .frame(width: 36, height: 5)
+                .accessibilityHidden(true)
 
-            Spacer()
+            HStack {
+                Button {
+                    onMinimize()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(PlayerInk.cream)
+                        .frame(width: HushStyle.tapTarget + 4, height: HushStyle.tapTarget + 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to library")
 
-            Button {
-                showingQueue = true
-            } label: {
-                BarIcon(systemName: "list.bullet", size: 18)
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Up Next")
-            .accessibilityHint("Shows the queue so you can reorder, remove or add songs")
         }
-        .frame(height: HushStyle.tapTarget)
+        .frame(height: HushStyle.tapTarget + 4)
     }
 
     /// The artist name leads to their page (a short menu when several are credited), like Apple Music.
@@ -119,7 +122,7 @@ struct NowPlayingView: View {
         let credited = library.creditedArtists(in: credit)
         let label = Text(text)
             .font(.system(size: 16))
-            .foregroundStyle(HushStyle.muted)
+            .foregroundStyle(PlayerInk.secondary)
             .lineLimit(1)
         if credited.count == 1, let artist = credited.first {
             Button {
@@ -145,136 +148,157 @@ struct NowPlayingView: View {
         }
     }
 
+    /// Title (serif, shrinking a little to fit), "Artist · Album" links beneath, and the "…" menu.
     private var trackInformation: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(library.currentItem?.title ?? "Choose something to play")
-                .font(.system(size: 29, weight: .regular, design: .serif))
-                .tracking(-0.3)
-                .foregroundStyle(HushStyle.ink)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(library.currentItem?.title ?? "Choose something to play")
+                    .font(.system(size: 29, weight: .regular, design: .serif))
+                    .tracking(-0.3)
+                    .foregroundStyle(PlayerInk.cream)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.76)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            // "Artist · Album": the artist opens their page, the album opens the album.
-            HStack(spacing: 6) {
-                artistLine
-                    .layoutPriority(1)
-                if let album = currentAlbum {
-                    let songAlbumTitle = library.currentItem?.albumTitle ?? ""
-                    let albumTitle = songAlbumTitle.isEmpty ? album.title : songAlbumTitle
-                    separatorDot
-                    Button {
-                        onGoTo(.album(album.id))
-                    } label: {
+                // "Artist · Album": the artist opens their page, the album opens the album.
+                HStack(spacing: 6) {
+                    artistLine
+                        .layoutPriority(1)
+                    if let album = currentAlbum {
+                        let songAlbumTitle = library.currentItem?.albumTitle ?? ""
+                        let albumTitle = songAlbumTitle.isEmpty ? album.title : songAlbumTitle
+                        separatorDot
+                        Button {
+                            onGoTo(.album(album.id))
+                        } label: {
+                            Text(albumTitle)
+                                .font(.system(size: 16))
+                                .foregroundStyle(PlayerInk.secondary)
+                                .lineLimit(1)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Go to album \(albumTitle)")
+                    } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
+                        separatorDot
                         Text(albumTitle)
                             .font(.system(size: 16))
-                            .foregroundStyle(HushStyle.muted)
+                            .foregroundStyle(PlayerInk.secondary)
                             .lineLimit(1)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Go to album \(albumTitle)")
-                } else if let albumTitle = library.currentItem?.albumTitle, !albumTitle.isEmpty {
-                    separatorDot
-                    Text(albumTitle)
-                        .font(.system(size: 16))
-                        .foregroundStyle(HushStyle.muted)
-                        .lineLimit(1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if library.currentItem != nil {
+                moreMenu
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "…": Go to Album, and Go to each credited artist.
+    private var moreMenu: some View {
+        Menu {
+            if let album = currentAlbum {
+                Button {
+                    onGoTo(.album(album.id))
+                } label: {
+                    Label("Go to Album", systemImage: "square.stack")
+                }
+            }
+            ForEach(library.creditedArtists(in: library.currentItem?.artist)) { artist in
+                Button {
+                    onGoTo(.artist(artist.id))
+                } label: {
+                    Label("Go to \(artist.name)", systemImage: "music.mic")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(PlayerInk.cream)
+                .frame(width: HushStyle.tapTarget + 4, height: HushStyle.tapTarget + 4)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More")
     }
 
     /// The "·" between the artist and the album.
     private var separatorDot: some View {
         Text("·")
             .font(.system(size: 16))
-            .foregroundStyle(HushStyle.muted)
+            .foregroundStyle(PlayerInk.secondary)
             .accessibilityHidden(true)
     }
 
     /// Previous, play/pause and next, centred.
     private var transportControls: some View {
-        HStack(spacing: 48) {
+        HStack(spacing: 40) {
             Button { library.skipBack() } label: {
                 Image(systemName: "backward.end.fill")
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(HushStyle.ink)
-                    .frame(width: 56, height: 56)
+                    .font(.system(size: 32, weight: .regular))
+                    .foregroundStyle(PlayerInk.cream)
+                    .frame(width: 60, height: 60)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PopButtonStyle())
             .accessibilityLabel("Previous track")
 
             Button { library.togglePlayback() } label: {
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Color.black)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(PlayerInk.glyph)
                     .popSymbolSwap(isPlaying: playback.isPlaying)
                     .offset(x: playback.isPlaying ? 0 : 2)
                     .frame(width: 76, height: 76)
-                    .background(HushStyle.ink, in: Circle())
+                    .background(PlayerInk.cream, in: Circle())
             }
             .buttonStyle(PopButtonStyle())
             .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
 
             Button { library.skipForward() } label: {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(HushStyle.ink)
-                    .frame(width: 56, height: 56)
+                    .font(.system(size: 32, weight: .regular))
+                    .foregroundStyle(PlayerInk.cream)
+                    .frame(width: 60, height: 60)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PopButtonStyle())
             .accessibilityLabel("Next track")
         }
     }
 
-    /// Shuffle at the left edge, repeat at the right: grey when off, bright when on.
+    /// Shuffle at the left edge, Up Next in the middle, repeat at the right: a soft square behind
+    /// each one that's on.
     private var modeControls: some View {
-        HStack {
-            shuffleButton
+        let shuffleOn = playback.shuffleMode == .songs || playback.shuffleMode == .albums
+        let repeatOn = playback.repeatMode == .all || playback.repeatMode == .one
+        return HStack {
+            PlayerModeToggle(systemName: "shuffle", isOn: shuffleOn) {
+                library.toggleShuffle()
+            }
+            .accessibilityLabel("Shuffle")
+            .accessibilityValue(shuffleOn ? "On" : "Off")
+            .accessibilityHint("Toggles shuffle for your queued songs")
+
             Spacer()
-            repeatButton
+
+            PlayerModeToggle(systemName: "list.bullet", isOn: showingQueue) {
+                showingQueue = true
+            }
+            .accessibilityLabel("Up Next")
+            .accessibilityHint("Shows the queue so you can reorder, remove or add songs")
+
+            Spacer()
+
+            PlayerModeToggle(systemName: playback.repeatMode == .one ? "repeat.1" : "repeat", isOn: repeatOn) {
+                library.cycleRepeatMode()
+            }
+            .accessibilityLabel("Repeat")
+            .accessibilityValue(repeatAccessibilityValue)
+            .accessibilityHint("Cycles between repeat off, repeat all, and repeat one")
         }
-    }
-
-    private var shuffleButton: some View {
-        let isEnabled = playback.shuffleMode == .songs || playback.shuffleMode == .albums
-
-        return Button {
-            library.toggleShuffle()
-        } label: {
-            Image(systemName: "shuffle")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(isEnabled ? HushStyle.ink : HushStyle.iconOff)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Shuffle")
-        .accessibilityValue(isEnabled ? "On" : "Off")
-        .accessibilityHint("Toggles shuffle for your queued songs")
-    }
-
-    private var repeatButton: some View {
-        let isEnabled = playback.repeatMode == .all || playback.repeatMode == .one
-        let symbol = playback.repeatMode == .one ? "repeat.1" : "repeat"
-
-        return Button {
-            library.cycleRepeatMode()
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(isEnabled ? HushStyle.ink : HushStyle.iconOff)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Repeat")
-        .accessibilityValue(repeatAccessibilityValue)
-        .accessibilityHint("Cycles between repeat off, repeat all, and repeat one")
     }
 
     private var repeatAccessibilityValue: String {
@@ -288,6 +312,31 @@ struct NowPlayingView: View {
         @unknown default:
             return "Off"
         }
+    }
+}
+
+/// A mode button on the player: the symbol bright with a soft cream square behind it when on,
+/// dimmed with nothing behind it when off. 48 pt to touch.
+private struct PlayerModeToggle: View {
+    let systemName: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(isOn ? PlayerInk.cream : PlayerInk.idle)
+                .frame(width: 38, height: 38)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(PlayerInk.cream.opacity(isOn ? 0.16 : 0))
+                )
+                .frame(width: 48, height: 48)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.2), value: isOn)
     }
 }
 
@@ -327,10 +376,10 @@ private struct PlaybackScrubber: View {
                 let width = max(geometry.size.width, 1)
                 let fraction = duration > 0 ? CGFloat(sliderValue / max(duration, 1)) : 0
                 ZStack(alignment: .leading) {
-                    Capsule().fill(HushStyle.track)
-                    Capsule().fill(HushStyle.ink).frame(width: width * min(max(fraction, 0), 1))
+                    Capsule().fill(PlayerInk.track)
+                    Capsule().fill(PlayerInk.cream).frame(width: width * min(max(fraction, 0), 1))
                 }
-                .frame(height: isScrubbing ? 5 : 3)
+                .frame(height: isScrubbing ? 8 : 4)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
@@ -353,7 +402,7 @@ private struct PlaybackScrubber: View {
                 )
                 .animation(.easeOut(duration: 0.15), value: isScrubbing)
             }
-            .frame(height: 20)
+            .frame(height: 28)
             .padding(.vertical, -8)
             .accessibilityElement()
             .accessibilityLabel("Position")
@@ -371,8 +420,8 @@ private struct PlaybackScrubber: View {
                 Spacer()
                 Text("−\(timestamp(max(duration - sliderValue, 0)))")
             }
-            .font(.system(size: 12).monospacedDigit())
-            .foregroundStyle(HushStyle.muted)
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .foregroundStyle(PlayerInk.secondary)
         }
     }
 
@@ -383,69 +432,285 @@ private struct PlaybackScrubber: View {
     }
 }
 
-/// Where the cover sits on the player, worked out once from the screen so the cover and the
-/// controls agree.
-private struct PlayerArtLayout: Equatable {
-    /// The top bar's height.
-    private static let topBarHeight: CGFloat = 44
-    /// Space between the top bar and the cover.
-    private static let coverGap: CGFloat = 2
-    /// Space between the cover and the title.
-    private static let titleGap: CGFloat = 30
-    /// Room the title, scrubber, transport and shuffle/repeat row need below the cover.
-    private static let controlsHeight: CGFloat = 318
+/// Colours used over the cover-coloured Now Playing background (the same as Hush for Android).
+enum PlayerInk {
+    static let cream = Color(red: 0.969, green: 0.945, blue: 0.894)
+    static let secondary = cream.opacity(0.72)
+    /// Shuffle and repeat while they're off.
+    static let idle = cream.opacity(0.55)
+    /// The scrubber's track.
+    static let track = Color.white.opacity(0.2)
+    /// The play/pause symbol on its cream disc.
+    static let glyph = Color(red: 0.227, green: 0.071, blue: 0.059)
+}
 
-    let width: CGFloat
-    let screenHeight: CGFloat
-    let topInset: CGFloat
-    /// From the very top of the screen to the cover's top edge.
-    let drop: CGFloat
-    /// The cover's side: the full screen width, smaller on short phones so the controls fit.
-    let coverSize: CGFloat
+/// The player's cover: framed, with rounded corners and a soft shadow. It crossfades when the song
+/// changes, sinks a little while paused and springs back when playing (held still with Reduce
+/// Motion), and follows a sideways swipe: left for the next song, right for the previous one.
+private struct PlayerCover: View {
+    let item: MPMediaItem?
+    let side: CGFloat
+    let isPlaying: Bool
+    let onNext: () -> Void
+    let onPrevious: () -> Void
 
-    init(width: CGFloat, height: CGFloat, topInset: CGFloat, bottomInset: CGFloat) {
-        let width = width.isFinite ? max(width, 0) : 0
-        let height = height.isFinite ? max(height, 0) : 0
-        self.width = width
-        self.topInset = topInset
-        screenHeight = height + topInset + bottomInset
-        drop = topInset + Self.topBarHeight + Self.coverGap
-        let room = screenHeight - bottomInset - Self.controlsHeight - Self.titleGap - drop
-        coverSize = max(min(width, room), 0)
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dragOffset: CGFloat = 0
+    @State private var isPastSkipThreshold = false
 
-    /// The cover's bottom edge, measured from the top of the screen.
-    var coverBottom: CGFloat { drop + coverSize }
+    private static let skipDistance: CGFloat = 80
 
-    /// Space between the top bar and the title, so the title starts just below the cover.
-    var titleGap: CGFloat {
-        max(coverBottom + Self.titleGap - topInset - Self.topBarHeight, 0)
+    var body: some View {
+        ZStack {
+            // Crossfades to the next song's cover instead of snapping.
+            ArtworkView(item: item, cornerRadius: 10, size: CGSize(width: 1200, height: 1200))
+                .id(item?.persistentID)
+                .transition(.opacity)
+        }
+        .animation(.easeInOut(duration: 0.35), value: item?.persistentID)
+        .frame(width: side, height: side)
+        .shadow(color: .black.opacity(0.5), radius: 17, x: 0, y: 18)
+        .scaleEffect(isPlaying || reduceMotion ? 1 : 0.84)
+        .animation(.spring(response: 0.45, dampingFraction: 0.66), value: isPlaying)
+        .offset(x: dragOffset * 0.5)
+        // A UIKit pan that only starts on a sideways swipe, so a downward swipe still closes the player.
+        .overlay {
+            SidewaysSwipe(
+                onChange: { translation in
+                    dragOffset = translation
+                    let isPast = abs(translation) > Self.skipDistance
+                    if isPast != isPastSkipThreshold {
+                        isPastSkipThreshold = isPast
+                        if isPast { Haptics.selection() }
+                    }
+                },
+                onEnd: { translation, velocity in
+                    isPastSkipThreshold = false
+                    let flick = velocity * 0.2
+                    if abs(translation) > Self.skipDistance || abs(flick) > 240 {
+                        if translation + flick < 0 { onNext() } else { onPrevious() }
+                    }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { dragOffset = 0 }
+                }
+            )
+            .frame(width: side, height: side)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Next song") { onNext() }
+        .accessibilityAction(named: "Previous song") { onPrevious() }
     }
 }
 
-/// Everything behind the player's controls: black, with the cover as large as it fits, a crisp
-/// square the full width of the screen.
-private struct NowPlayingBackdrop: View {
+/// A clear view that reports sideways drags. Its pan only begins when the finger moves more across
+/// than up or down, so vertical swipes go on to whatever else is listening (closing the player).
+private struct SidewaysSwipe: UIViewRepresentable {
+    let onChange: @MainActor (CGFloat) -> Void
+    let onEnd: @MainActor (_ translation: CGFloat, _ velocity: CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
+        pan.delegate = context.coordinator
+        view.addGestureRecognizer(pan)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: SidewaysSwipe
+
+        init(_ parent: SidewaysSwipe) {
+            self.parent = parent
+        }
+
+        @objc func pan(_ recognizer: UIPanGestureRecognizer) {
+            switch recognizer.state {
+            case .changed:
+                parent.onChange(recognizer.translation(in: recognizer.view).x)
+            case .ended:
+                parent.onEnd(recognizer.translation(in: recognizer.view).x, recognizer.velocity(in: recognizer.view).x)
+            case .cancelled, .failed:
+                parent.onEnd(0, 0)
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y)
+        }
+    }
+}
+
+// MARK: - Cover-coloured background
+
+/// A cover's edge colours, ready to paint, with how bright each is (0 = black … 1 = white).
+struct PlayerColors: Sendable {
+    let top: Color
+    let bottom: Color
+    /// Halfway between the two.
+    let middle: Color
+    let topBrightness: Double
+    let bottomBrightness: Double
+
+    init(top: ArtworkColors.RGB, bottom: ArtworkColors.RGB) {
+        self.top = Color(red: top.red, green: top.green, blue: top.blue)
+        self.bottom = Color(red: bottom.red, green: bottom.green, blue: bottom.blue)
+        middle = Color(
+            red: (top.red + bottom.red) / 2,
+            green: (top.green + bottom.green) / 2,
+            blue: (top.blue + bottom.blue) / 2
+        )
+        topBrightness = Double(top.brightness)
+        bottomBrightness = Double(bottom.brightness)
+    }
+
+    /// Warm browns, for a song with no cover.
+    static let fallback = PlayerColors(
+        top: ArtworkColors.RGB(red: 0.227, green: 0.173, blue: 0.094),
+        bottom: ArtworkColors.RGB(red: 0.078, green: 0.067, blue: 0.047)
+    )
+}
+
+/// Each song's cover colours, worked out once from a small copy of the cover.
+@MainActor
+enum PlayerColorCache {
+    private static var colors: [UInt64: PlayerColors] = [:]
+    private static var order: [UInt64] = []
+    private static let limit = 300
+
+    static func cached(_ id: UInt64) -> PlayerColors? {
+        colors[id]
+    }
+
+    static func colors(for item: MPMediaItem) async -> PlayerColors? {
+        let id = item.persistentID
+        if let hit = colors[id] { return hit }
+        // MediaPlayer hands out artwork reliably only on the main thread; the sampling runs off it.
+        guard let raw = item.artwork?.image(at: CGSize(width: 240, height: 240)) else { return nil }
+        let made = await Task.detached(priority: .userInitiated) { () -> PlayerColors? in
+            guard let source = CIImage(image: raw),
+                  let edges = ArtworkColors.edgeColors(of: source) else { return nil }
+            return PlayerColors(top: edges.top, bottom: edges.bottom)
+        }.value
+        if let made {
+            if colors[id] == nil { order.append(id) }
+            colors[id] = made
+            if order.count > limit { colors[order.removeFirst()] = nil }
+        }
+        return made
+    }
+}
+
+/// The Now Playing background: the cover's edge colours as a softly drifting gradient, shaded so
+/// cream text always reads. Keeps the old colours until the new ones are ready, then blends over
+/// 0.7 s. Holds still with Reduce Motion.
+private struct CoverColorBackdrop: View {
     let item: MPMediaItem?
-    let layout: PlayerArtLayout
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var colors: PlayerColors
+    @State private var colorsID: UInt64
+
+    init(item: MPMediaItem?) {
+        self.item = item
+        if let item, let cached = PlayerColorCache.cached(item.persistentID) {
+            _colors = State(initialValue: cached)
+            _colorsID = State(initialValue: item.persistentID)
+        } else {
+            _colors = State(initialValue: .fallback)
+            _colorsID = State(initialValue: 0)
+        }
+    }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            HushStyle.paper
-            // Crossfades to the next song's cover instead of snapping.
-            ZStack {
-                ArtworkView(item: item, cornerRadius: 0, size: CGSize(width: 1200, height: 1200))
-                    .id(item?.persistentID)
-                    .transition(.opacity)
-            }
-            .animation(.easeInOut(duration: 0.35), value: item?.persistentID)
-            .frame(width: layout.coverSize, height: layout.coverSize)
-            .clipped()
-            .offset(y: layout.drop)
+        ZStack {
+            Color.black
+            DriftingColors(colors: colors, drifts: !reduceMotion)
+                .id(colorsID)
+                .transition(.opacity)
         }
-        .frame(width: layout.width, height: layout.screenHeight, alignment: .top)
-        .clipped()
-        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.7), value: colorsID)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+        .task(id: item?.persistentID) {
+            guard let item else { return }
+            let id = item.persistentID
+            guard id != colorsID else { return }
+            if let cached = PlayerColorCache.cached(id) {
+                colors = cached
+                colorsID = id
+                return
+            }
+            guard let loaded = await PlayerColorCache.colors(for: item), !Task.isCancelled else { return }
+            colors = loaded
+            colorsID = id
+        }
+    }
+}
+
+/// Three soft pools of the cover's colours that wander slowly over its top-to-bottom gradient.
+private struct DriftingColors: View {
+    let colors: PlayerColors
+    let drifts: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !drifts)) { context in
+            let time = drifts ? context.date.timeIntervalSinceReferenceDate : 0
+            let t = Self.wave(time, period: 19)
+            let u = Self.wave(time, period: 27)
+            GeometryReader { geometry in
+                let reach = max(geometry.size.width, geometry.size.height)
+                let topShade = min(0.18 + 0.30 * colors.topBrightness, 0.9)
+                let bottomShade = min(0.30 + 0.40 * colors.bottomBrightness + 0.25, 0.92)
+                ZStack {
+                    LinearGradient(colors: [colors.top, colors.bottom], startPoint: .top, endPoint: .bottom)
+                    RadialGradient(
+                        colors: [colors.top.opacity(0.75), .clear],
+                        center: UnitPoint(x: 0.1 + 0.8 * t, y: 0.08 + 0.18 * u),
+                        startRadius: 0,
+                        endRadius: reach * 0.7
+                    )
+                    RadialGradient(
+                        colors: [colors.bottom.opacity(0.75), .clear],
+                        center: UnitPoint(x: 0.9 - 0.8 * u, y: 0.92 - 0.2 * t),
+                        startRadius: 0,
+                        endRadius: reach * 0.75
+                    )
+                    RadialGradient(
+                        colors: [colors.middle.opacity(0.5), .clear],
+                        center: UnitPoint(x: 0.3 + 0.4 * u, y: 0.4 + 0.2 * t),
+                        startRadius: 0,
+                        endRadius: reach * 0.5
+                    )
+                    // Darken for legibility, a little more toward the bottom (the Mac's shade).
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(topShade), location: 0),
+                            .init(color: .black.opacity(min(topShade + 0.08, 0.9)), location: 0.45),
+                            .init(color: .black.opacity(bottomShade), location: 1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+        }
+    }
+
+    /// 0 → 1 → 0 at an even pace, taking `period` seconds each way.
+    private static func wave(_ time: TimeInterval, period: Double) -> CGFloat {
+        let phase = time.truncatingRemainder(dividingBy: period * 2) / period
+        return CGFloat(phase <= 1 ? phase : 2 - phase)
     }
 }
 

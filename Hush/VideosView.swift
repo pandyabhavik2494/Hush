@@ -306,8 +306,28 @@ enum VideoPlayback {
         controller.delegate = delegate
         presenter.present(controller, animated: true) {
             player.play()
+            Task { @MainActor in
+                await turnSidewaysIfWide(item.asset, in: controller)
+            }
         }
         return true
+    }
+
+    /// A wide video turns the screen sideways as soon as it opens, even with Portrait Orientation
+    /// Lock on (as Hush for Android does); closing the player turns it back upright. With the lock
+    /// off, turning the phone upright while it plays still works.
+    private static func turnSidewaysIfWide(_ asset: AVAsset, in controller: AVPlayerViewController) async {
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let loaded = try? await track.load(.naturalSize, .preferredTransform) else { return }
+        let shown = loaded.0.applying(loaded.1)
+        guard abs(shown.width) > abs(shown.height) * 1.1,
+              controller.presentingViewController != nil,
+              !controller.isBeingDismissed,
+              let scene = controller.view.window?.windowScene,
+              scene.interfaceOrientation.isPortrait else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { error in
+            hushLog.error("Couldn't turn the video sideways: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// The video has stopped for good (closed full screen, or its floating window closed): put the
@@ -424,12 +444,16 @@ final class HushAppDelegate: NSObject, UIApplicationDelegate {
         return .portrait
     }
 
-    /// Asks the system to look again at which ways the app may be turned (after a video closes).
+    /// Asks the system to look again at which ways the app may be turned (after a video closes),
+    /// and turns it back upright if a video had turned it sideways.
     @MainActor
     static func refreshSupportedOrientations() {
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
             for window in scene.windows {
                 window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            }
+            if !scene.interfaceOrientation.isPortrait {
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
             }
         }
     }
