@@ -68,6 +68,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.SpeakerGroup
+import com.pandyabhavik.hush.playback.Speakers
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
@@ -532,17 +535,43 @@ internal fun SongActionsMenu(song: Song, expanded: Boolean, extra: (@Composable 
 @Composable
 private fun ModeRow(showQueue: Boolean, onToggleQueue: () -> Unit, modifier: Modifier = Modifier) {
     val player = LocalActions.current.model.player
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        ModeToggle(Icons.Rounded.Shuffle, "Shuffle", on = player.shuffled) { player.toggleShuffle() }
-        Spacer(Modifier.weight(1f))
-        ModeToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Up Next", on = showQueue, onClick = onToggleQueue)
-        Spacer(Modifier.weight(1f))
-        ModeToggle(
-            if (player.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            "Repeat",
-            on = player.repeatMode != Player.REPEAT_MODE_OFF,
-        ) { player.cycleRepeat() }
+    var choosingSpeaker by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            ModeToggle(Icons.Rounded.Shuffle, "Shuffle", on = player.shuffled) { player.toggleShuffle() }
+            Spacer(Modifier.weight(1f))
+            ModeToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Up Next", on = showQueue, onClick = onToggleQueue)
+            Spacer(Modifier.weight(1f))
+            ModeToggle(
+                if (Speakers.current != null) Icons.Rounded.SpeakerGroup else Icons.Rounded.Speaker,
+                "Play On",
+                on = Speakers.current != null || Speakers.connecting != null,
+            ) { choosingSpeaker = true }
+            Spacer(Modifier.weight(1f))
+            ModeToggle(
+                if (player.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                "Repeat",
+                on = player.repeatMode != Player.REPEAT_MODE_OFF,
+            ) { player.cycleRepeat() }
+        }
+        // Where the music is playing, when it isn't the phone.
+        val where = Speakers.connecting?.let { "Connecting to ${it.name}…" } ?: Speakers.current?.let { "Playing on ${it.name}" }
+        if (where != null) {
+            Text(
+                where,
+                style = Hush.sans(13.sp, PlayerInk.accent, FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { choosingSpeaker = true }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
     }
+    if (choosingSpeaker) SpeakerSheet(onClose = { choosingSpeaker = false })
 }
 
 /** A mode button: a soft cream square behind it when on, the icon dimmed when off. */

@@ -2,7 +2,7 @@ name: Hush for Android
 
 on:
   push:
-    branches: [android, development, main]
+    branches: [android, development, main, "claude/**"]
     paths: ["android/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 

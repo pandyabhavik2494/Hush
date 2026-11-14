@@ -3,6 +3,13 @@ package com.pandyabhavik.hush.playback
 import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.Intent
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -15,11 +22,26 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.pandyabhavik.hush.MainActivity
 import com.pandyabhavik.hush.data.Prefs
+import java.net.InetAddress
 
-/** Plays in the background, with lock-screen and notification controls. */
+/**
+ * Plays in the background, with lock-screen and notification controls. Music plays on the phone
+ * (its speaker, or whatever Bluetooth or wired output is chosen) through ExoPlayer, or on a Sonos
+ * or other Wi-Fi speaker through [SpeakerPlayer]; the session moves between the two, carrying the
+ * queue, the place in the song and whether it was playing.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private lateinit var prefs: Prefs
+    private lateinit var phone: ExoPlayer
+    private var speakerPlayer: SpeakerPlayer? = null
+    private var server: SongServer? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    /** One for both players, so a song isn't counted twice when it moves between them. */
+    private val saver by lazy { SessionSaver() }
 
     override fun onCreate() {
         super.onCreate()
@@ -35,7 +57,8 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
-        player.addListener(SessionSaver(player))
+        phone = player
+        player.addListener(saver)
 
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -45,6 +68,139 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(openApp)
             .setCallback(Callback())
             .build()
+        Speakers.service = this
+        getSystemService(AudioManager::class.java)?.registerAudioDeviceCallback(outputs, main)
+    }
+
+    // MARK: Where the music plays
+
+    /** Hands the queue to [speaker] on the Wi-Fi. */
+    fun useSpeaker(speaker: Speaker) {
+        if (session == null || speakerPlayer?.speaker?.id == speaker.id) return
+        Speakers.connecting = speaker
+        Speakers.problem = null
+        val songs = server ?: SongServer(applicationContext).also { server = it }
+        // Finding the phone's own address on the Wi-Fi touches the network: not on the main thread.
+        Thread({
+            val ok = runCatching { songs.start(InetAddress.getByName(speaker.host)) }.isSuccess && songs.base != null
+            main.post {
+                if (Speakers.connecting?.id != speaker.id) return@post
+                if (ok) switchToSpeaker(speaker, songs) else {
+                    Speakers.connecting = null
+                    Speakers.problem = "Hush couldn't reach ${speaker.name}. Is the phone on the same Wi-Fi?"
+                }
+            }
+        }, "hush-speaker-start").start()
+    }
+
+    private fun switchToSpeaker(speaker: Speaker, songs: SongServer) {
+        val s = session ?: return
+        val from = s.player
+        val place = Place.of(from)
+        val target = SpeakerPlayer(applicationContext, speaker, songs) { problem -> Speakers.problem = problem }
+        target.addListener(saver)
+        target.addListener(locks)
+        target.repeatMode = place.repeatMode
+        target.setMediaItems(place.items, place.index, place.positionMs)
+        target.playWhenReady = place.playWhenReady
+        if (place.items.isNotEmpty()) target.prepare()
+        if (from is SpeakerPlayer) {
+            from.stopSpeaker()
+            from.release()
+        } else {
+            phone.pause()
+            phone.stop()
+        }
+        s.player = target
+        speakerPlayer = target
+        Speakers.current = speaker
+        Speakers.connecting = null
+        Speakers.volume = target.speakerVolume
+        holdLocks(place.playWhenReady)
+    }
+
+    /** Back to the phone; [device] is the output to use, or null for Android's own choice. */
+    fun usePhone(device: AudioDeviceInfo?) {
+        Speakers.connecting = null
+        val s = session
+        val remote = speakerPlayer
+        if (s != null && remote != null) {
+            val place = Place.of(remote)
+            remote.stopSpeaker()
+            remote.release()
+            speakerPlayer = null
+            phone.repeatMode = place.repeatMode
+            phone.setMediaItems(place.items.map(::resolve), place.index, place.positionMs)
+            phone.playWhenReady = place.playWhenReady
+            if (place.items.isNotEmpty()) phone.prepare()
+            s.player = phone
+            Speakers.current = null
+            server?.stop()
+            server = null
+            holdLocks(false)
+        }
+        phone.setPreferredAudioDevice(device)
+        Speakers.phoneOutput = device?.id
+    }
+
+    fun setSpeakerVolume(value: Int) {
+        speakerPlayer?.setVolume(value)
+    }
+
+    /** The queue and the place in it, carried from one player to the other. */
+    private class Place(val items: List<MediaItem>, val index: Int, val positionMs: Long, val playWhenReady: Boolean, val repeatMode: Int) {
+        companion object {
+            fun of(player: Player) = Place(
+                items = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) },
+                index = player.currentMediaItemIndex.coerceAtLeast(0),
+                positionMs = player.currentPosition.coerceAtLeast(0),
+                playWhenReady = player.playWhenReady,
+                repeatMode = player.repeatMode,
+            )
+        }
+    }
+
+    /**
+     * A new Bluetooth or wired output connecting takes over, as it would in any other app; and when
+     * the chosen output goes away, Android picks again.
+     */
+    private val outputs = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            if (Speakers.phoneOutput != null && addedDevices.any { it.isSink && it.type in PhoneOutputs.external }) {
+                phone.setPreferredAudioDevice(null)
+                Speakers.phoneOutput = null
+            }
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            if (removedDevices.any { it.id == Speakers.phoneOutput }) {
+                phone.setPreferredAudioDevice(null)
+                Speakers.phoneOutput = null
+            }
+        }
+    }
+
+    /** While a Wi-Fi speaker plays, the phone keeps its Wi-Fi awake: the speaker reads the song from it. */
+    private val locks = object : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = holdLocks(playWhenReady && speakerPlayer != null)
+    }
+
+    private fun holdLocks(on: Boolean) {
+        if (on) {
+            val wifi = wifiLock ?: getSystemService(WifiManager::class.java)
+                ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "hush:speaker")
+                ?.apply { setReferenceCounted(false) }
+                .also { wifiLock = it }
+            val wake = wakeLock ?: getSystemService(PowerManager::class.java)
+                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "hush:speaker")
+                ?.apply { setReferenceCounted(false) }
+                .also { wakeLock = it }
+            runCatching { wifi?.acquire() }
+            runCatching { wake?.acquire(6 * 60 * 60 * 1000L) }
+        } else {
+            runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+            runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -55,10 +211,20 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        session?.run {
-            player.release()
+        getSystemService(AudioManager::class.java)?.unregisterAudioDeviceCallback(outputs)
+        speakerPlayer?.run {
+            stopSpeaker()
             release()
         }
+        speakerPlayer = null
+        server?.stop()
+        server = null
+        holdLocks(false)
+        if (Speakers.service === this) Speakers.service = null
+        Speakers.current = null
+        Speakers.connecting = null
+        session?.release()
+        phone.release()
         session = null
         super.onDestroy()
     }
@@ -94,7 +260,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     /** Remembers the queue and position, and counts plays. */
-    private inner class SessionSaver(private val player: ExoPlayer) : Player.Listener {
+    private inner class SessionSaver : Player.Listener {
         private var countedFor: String? = null
 
         override fun onEvents(player: Player, events: Player.Events) {
