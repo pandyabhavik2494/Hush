@@ -306,6 +306,24 @@ class PlaybackTest : HushTestBase() {
         waitGone(desc("Close Up Next"))
     }
 
+    /** Play On lists the phone's outputs and looks for speakers on the Wi-Fi; the music keeps playing on the phone. */
+    @Test
+    fun playOnSheetOpensAndCloses() {
+        playFromSongs("Hush Test One")
+        openNowPlaying()
+        tap(desc("Play On"))
+        waitDisplayed(text("Play On"))
+        waitDisplayed(text("This Phone"))
+        waitDisplayed(text("ON WI-FI"))
+        waitDisplayed(button("Connect a Bluetooth device"))
+        // The emulator has no speakers: the search ends saying so.
+        waitDisplayed(text("No speakers found. Check that the phone is on the same Wi-Fi as your Sonos."), 15_000)
+        shot("play-70-play-on")
+        pressBack()
+        waitGone(text("ON WI-FI"))
+        assertEquals(true, model.player.isPlaying)
+    }
+
     /** A song that finishes moves on to the next; at the end of the queue playback stops and Play starts again. */
     @Test
     fun songsFinishAndTheQueueEnds() {
