@@ -176,6 +176,7 @@ fun NowPlaying(onClose: () -> Unit) {
 
     // Opened again while the closing animation still runs: start from a clean slate.
     LaunchedEffect(model.playerOpen) {
+        if (!model.playerOpen) model.speakersOpen = false
         if (model.playerOpen) {
             settle?.cancel()
             closing = false
@@ -184,7 +185,13 @@ fun NowPlaying(onClose: () -> Unit) {
     }
 
     // Off while the close animation runs, so a second back reaches the page underneath.
-    BackHandler(enabled = model.playerOpen && !closing) { if (showQueue) showQueue = false else close() }
+    BackHandler(enabled = model.playerOpen && !closing) {
+        when {
+            model.speakersOpen -> model.speakersOpen = false
+            showQueue -> showQueue = false
+            else -> close()
+        }
+    }
 
     BoxWithConstraints(
         Modifier
@@ -203,7 +210,7 @@ fun NowPlaying(onClose: () -> Unit) {
             .draggable(
                 state = dragState,
                 orientation = Orientation.Vertical,
-                enabled = !showQueue && !closing,
+                enabled = !showQueue && !closing && !model.speakersOpen,
                 onDragStarted = { settle?.cancel() },
                 onDragStopped = { velocity ->
                     if (dragY > with(density) { 120.dp.toPx() } || velocity > 1800f) {
@@ -245,6 +252,11 @@ fun NowPlaying(onClose: () -> Unit) {
             exit = slideOutVertically(tween(240)) { it },
         ) {
             UpNextSheet(screenHeight, onClose = { showQueue = false })
+        }
+
+        // Play On: speakers on the Wi-Fi, Bluetooth and the phone.
+        AnimatedVisibility(visible = model.speakersOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+            SpeakerSheet(onClose = { model.speakersOpen = false })
         }
     }
 }
@@ -535,7 +547,7 @@ internal fun SongActionsMenu(song: Song, expanded: Boolean, extra: (@Composable 
 @Composable
 private fun ModeRow(showQueue: Boolean, onToggleQueue: () -> Unit, modifier: Modifier = Modifier) {
     val player = LocalActions.current.model.player
-    var choosingSpeaker by remember { mutableStateOf(false) }
+    val model = LocalActions.current.model
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ModeToggle(Icons.Rounded.Shuffle, "Shuffle", on = player.shuffled) { player.toggleShuffle() }
@@ -546,7 +558,7 @@ private fun ModeRow(showQueue: Boolean, onToggleQueue: () -> Unit, modifier: Mod
                 if (Speakers.current != null) Icons.Rounded.SpeakerGroup else Icons.Rounded.Speaker,
                 "Play On",
                 on = Speakers.current != null || Speakers.connecting != null,
-            ) { choosingSpeaker = true }
+            ) { model.speakersOpen = true }
             Spacer(Modifier.weight(1f))
             ModeToggle(
                 if (player.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -566,12 +578,11 @@ private fun ModeRow(showQueue: Boolean, onToggleQueue: () -> Unit, modifier: Mod
                     .align(Alignment.CenterHorizontally)
                     .padding(top = 2.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable { choosingSpeaker = true }
+                    .clickable { model.speakersOpen = true }
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
     }
-    if (choosingSpeaker) SpeakerSheet(onClose = { choosingSpeaker = false })
 }
 
 /** A mode button: a soft cream square behind it when on, the icon dimmed when off. */

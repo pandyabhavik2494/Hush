@@ -44,6 +44,8 @@ class HushModel(application: Application) : AndroidViewModel(application) {
     // is folded or unfolded, rotated, or Android rebuilds the screen.
     val pages = mutableStateListOf<Route>()
     var playerOpen by mutableStateOf(false)
+    /** The Play On sheet (speakers and Bluetooth) over the player. */
+    var speakersOpen by mutableStateOf(false)
     var video by mutableStateOf<Video?>(null)
     var videoResume: Pair<String, Long>? = null
 

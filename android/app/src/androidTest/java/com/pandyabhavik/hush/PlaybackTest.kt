@@ -1,5 +1,6 @@
 package com.pandyabhavik.hush
 
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -314,10 +315,13 @@ class PlaybackTest : HushTestBase() {
         tap(desc("Play On"))
         waitDisplayed(text("Play On"))
         waitDisplayed(text("This Phone"))
-        waitDisplayed(text("ON WI-FI"))
         waitDisplayed(button("Connect a Bluetooth device"))
-        // The emulator has no speakers: the search ends saying so.
-        waitDisplayed(text("No speakers found. Check that the phone is on the same Wi-Fi as your Sonos."), 15_000)
+        // The list scrolls to the Wi-Fi speakers, however short the screen.
+        val noSpeakers = text("No speakers found. Check that the phone is on the same Wi-Fi as your Sonos.")
+        waitUntil("the speaker search to end", 15_000) { exists(noSpeakers) }
+        compose.onNode(hasTestTag("playOnList")).performScrollToNode(noSpeakers)
+        waitDisplayed(text("ON WI-FI"))
+        waitDisplayed(noSpeakers)
         shot("play-70-play-on")
         pressBack()
         waitGone(text("ON WI-FI"))
