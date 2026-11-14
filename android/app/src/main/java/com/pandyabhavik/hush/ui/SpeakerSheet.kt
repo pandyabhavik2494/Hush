@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -47,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.pandyabhavik.hush.playback.PhoneOutputs
 import com.pandyabhavik.hush.playback.Speaker
 import com.pandyabhavik.hush.playback.Speakers
@@ -81,11 +86,22 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun SpeakerSheet(onClose: () -> Unit) {
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        // A dialog's window keeps the size of its first layout, so a list that grows as speakers are
+        // found ran off the screen. Make the window the whole screen, and size the sheet inside it.
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            window?.setDimAmount(0.5f)
+        }
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
+                .statusBarsPadding(),
         ) {
             val wide = maxWidth >= 600.dp
             val shape = if (wide) RoundedCornerShape(24.dp) else RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
@@ -110,7 +126,7 @@ fun SpeakerSheet(onClose: () -> Unit) {
                     style = Hush.sans(17.sp, Hush.ink, FontWeight.SemiBold),
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp, bottom = 8.dp),
                 )
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
                     SpeakerList(onClose)
                 }
             }
