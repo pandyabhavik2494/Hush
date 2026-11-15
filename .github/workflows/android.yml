@@ -55,11 +55,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 75
-    # The Fold's two screens are tested side by side, on two emulators at once.
+    # The Fold's two screens and a regular phone (S25 Edge) are tested side by side, on three emulators at once.
     strategy:
       fail-fast: false
       matrix:
-        screen: [cover-screen, inner-screen]
+        screen: [cover-screen, inner-screen, regular-phone]
     steps:
       - uses: actions/checkout@v4
 

@@ -5,7 +5,7 @@ set -uo pipefail
 media="$1"      # from make-test-media.sh
 apk="$2"        # the release APK
 results="$3"
-screen="$4"     # cover-screen or inner-screen
+screen="$4"     # cover-screen, inner-screen or regular-phone
 mkdir -p "$results"
 status=0
 
@@ -121,6 +121,12 @@ if [ "$screen" = cover-screen ]; then
   adb shell wm density 420
   # Larger text, as many people use on the small screen: nothing should fall off the bottom.
   adb shell settings put system font_scale 1.15
+elif [ "$screen" = regular-phone ]; then
+  # A Galaxy S25 Edge at its default FHD+ resolution: 1080 x 2340 at 450 dpi, about 384 x 832 dp,
+  # narrower and shorter than the Fold's cover screen.
+  echo "== Instrumented tests, a regular phone (S25 Edge) =="
+  adb shell wm size 1080x2340
+  adb shell wm density 450
 else
   echo "== Instrumented tests, the Fold's inner screen size =="
   adb shell wm size 1968x2184

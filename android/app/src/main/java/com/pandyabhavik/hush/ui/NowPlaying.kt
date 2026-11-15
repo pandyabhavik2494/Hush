@@ -40,6 +40,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -312,56 +314,71 @@ private fun CompactPlayer(song: Song, showQueue: Boolean, onToggleQueue: () -> U
 
 @Composable
 private fun WidePlayer(song: Song, showQueue: Boolean, onToggleQueue: () -> Unit, onClose: () -> Unit) {
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxHeight().statusBarsPadding().navigationBarsPadding()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircleIconButton(Icons.Rounded.KeyboardArrowDown, "Close", onClick = onClose)
-                Spacer(Modifier.weight(1f))
-                Text("Hush", style = TextStyle(fontFamily = Hush.wordmark, fontSize = 20.sp, color = PlayerInk.cream.copy(alpha = 0.65f)))
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.width(48.dp))
-            }
-            BoxWithConstraints(
-                Modifier.weight(1f).fillMaxWidth().padding(start = 40.dp, end = 40.dp, bottom = 24.dp),
-            ) {
-                val sideBySide = maxWidth > maxHeight * 0.85f
-                val shadow = CoverShadow(Color.Black.copy(alpha = 0.55f), 45.dp, 30.dp)
-                if (sideBySide) {
-                    val gap = 48.dp
-                    val details = ((maxWidth - gap) * 0.45f).coerceIn(300.dp, 460.dp)
-                    val cover = minOf(520.dp, maxHeight - 16.dp, maxWidth - gap - details).coerceAtLeast(0.dp)
+    // A regular phone turned sideways (an S25 Edge is about 830 x 380 dp, the Fold's cover screen
+    // about 960 x 410) is wide but short: a slimmer top bar, a one-line title and no "Next" row,
+    // so the cover and every control fit without scrolling.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val short = maxHeight < 560.dp
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxHeight().statusBarsPadding().navigationBarsPadding()) {
+                Column(Modifier.fillMaxSize()) {
                     Row(
-                        Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
+                        Modifier.fillMaxWidth().height(if (short) 48.dp else 64.dp).padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (cover > 0.dp) PlayerArt(song, cover, 22.dp, shadow)
-                        WideDetails(song, showQueue, onToggleQueue, titleSize = 46.sp, titleLines = 3, modifier = Modifier.width(details))
+                        CircleIconButton(Icons.Rounded.KeyboardArrowDown, "Close", onClick = onClose)
+                        Spacer(Modifier.weight(1f))
+                        Text("Hush", style = TextStyle(fontFamily = Hush.wordmark, fontSize = 20.sp, color = PlayerInk.cream.copy(alpha = 0.65f)))
+                        Spacer(Modifier.weight(1f))
+                        Spacer(Modifier.width(48.dp))
                     }
-                } else {
-                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                            val side = minOf(520.dp, maxWidth, maxHeight)
-                            if (side > 0.dp) PlayerArt(song, side, 22.dp, shadow)
+                    BoxWithConstraints(
+                        Modifier.weight(1f).fillMaxWidth()
+                            .padding(start = if (short) 28.dp else 40.dp, end = if (short) 28.dp else 40.dp, bottom = if (short) 12.dp else 24.dp),
+                    ) {
+                        val sideBySide = maxWidth > maxHeight * 0.85f
+                        val shadow = CoverShadow(Color.Black.copy(alpha = 0.55f), if (short) 28.dp else 45.dp, if (short) 16.dp else 30.dp)
+                        if (sideBySide) {
+                            val gap = if (short) 32.dp else 48.dp
+                            val details = ((maxWidth - gap) * (if (short) 0.52f else 0.45f)).coerceIn(300.dp, 460.dp)
+                            val cover = minOf(520.dp, maxHeight - 16.dp, maxWidth - gap - details).coerceAtLeast(0.dp)
+                            Row(
+                                Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (cover > 0.dp) PlayerArt(song, cover, if (short) 14.dp else 22.dp, shadow)
+                                WideDetails(
+                                    song, showQueue, onToggleQueue,
+                                    titleSize = if (short) 28.sp else 46.sp, titleLines = if (short) 1 else 3, compact = short,
+                                    // With very large text the controls scroll rather than fall off the bottom.
+                                    modifier = Modifier.width(details).then(if (short) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                                )
+                            }
+                        } else {
+                            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                    val side = minOf(520.dp, maxWidth, maxHeight)
+                                    if (side > 0.dp) PlayerArt(song, side, 22.dp, shadow)
+                                }
+                                Spacer(Modifier.height(20.dp))
+                                WideDetails(
+                                    song, showQueue, onToggleQueue, titleSize = 34.sp, titleLines = 2,
+                                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(20.dp))
-                        WideDetails(
-                            song, showQueue, onToggleQueue, titleSize = 34.sp, titleLines = 2,
-                            modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
-                        )
                     }
                 }
             }
-        }
-        AnimatedVisibility(
-            visible = showQueue,
-            enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(300)),
-            exit = slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(300)),
-        ) {
-            UpNextPanel(Modifier.width(360.dp).fillMaxHeight(), onClose = onToggleQueue, onColor = true)
+            AnimatedVisibility(
+                visible = showQueue,
+                enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(300)),
+                exit = slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(300)),
+            ) {
+                // Narrower on a short phone screen, so the cover and controls stay usable beside it.
+                UpNextPanel(Modifier.width(if (short) 320.dp else 360.dp).fillMaxHeight(), onClose = onToggleQueue, onColor = true)
+            }
         }
     }
 }
@@ -369,12 +386,13 @@ private fun WidePlayer(song: Song, showQueue: Boolean, onToggleQueue: () -> Unit
 @Composable
 private fun WideDetails(
     song: Song, showQueue: Boolean, onToggleQueue: () -> Unit, titleSize: TextUnit, titleLines: Int, modifier: Modifier,
+    compact: Boolean = false,
 ) {
     val model = LocalActions.current.model
     val player = model.player
     Column(modifier) {
-        TrackInfo(song, titleSize = titleSize, minTitleSize = 28.sp, titleLines = titleLines)
-        Spacer(Modifier.height(16.dp))
+        TrackInfo(song, titleSize = titleSize, minTitleSize = if (compact) 20.sp else 28.sp, titleLines = titleLines)
+        Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
         PlayerScrubber(thin = 6.dp, thick = 10.dp, fill = PlayerInk.accent)
         Spacer(Modifier.height(6.dp))
         Row(
@@ -388,7 +406,7 @@ private fun WideDetails(
         }
         Spacer(Modifier.height(8.dp))
         ModeRow(showQueue, onToggleQueue)
-        val next = player.upNext.firstOrNull()?.let { model.library.song(it) }
+        val next = if (compact) null else player.upNext.firstOrNull()?.let { model.library.song(it) }
         if (next != null) {
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(PlayerInk.cream.copy(alpha = 0.14f)))
